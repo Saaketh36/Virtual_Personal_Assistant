@@ -1,6 +1,6 @@
 import asyncio
 import psycopg
-from embedding_client import embed
+from backend.embedding import embed
 
 DB_CONFIG = {
     "host": "localhost",
