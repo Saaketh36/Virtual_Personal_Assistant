@@ -1,4 +1,5 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
+import { IconMicrophone, IconMicrophoneOff, IconSend, IconLoader2 } from '@tabler/icons-react';
 
 const T = {
   bg: '#0a0812', inputBg: '#131025', inputBorder: '#2a2240',
@@ -14,6 +15,15 @@ export default function InputBar({ onSend, onVoiceReply, loading }) {
   const ref = useRef(null);
   const mediaRecorderRef = useRef(null);
   const chunksRef = useRef([]);
+  const recognitionRef = useRef(null);
+
+  useEffect(() => {
+    return () => {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+    };
+  }, []);
 
   const handleInput = (e) => {
     setText(e.target.value);
@@ -35,7 +45,16 @@ export default function InputBar({ onSend, onVoiceReply, loading }) {
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream);
+
+      // Pick the best supported MIME type
+      const mimeType = [
+        'audio/webm;codecs=opus',
+        'audio/webm',
+        'audio/ogg;codecs=opus',
+        'audio/ogg',
+      ].find(m => MediaRecorder.isTypeSupported(m)) || '';
+
+      const mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : {});
       mediaRecorderRef.current = mediaRecorder;
       chunksRef.current = [];
 
@@ -44,19 +63,63 @@ export default function InputBar({ onSend, onVoiceReply, loading }) {
       };
 
       mediaRecorder.onstop = async () => {
-        const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
+        const blob = new Blob(chunksRef.current, { type: mediaRecorder.mimeType || 'audio/webm' });
+        console.log(`[Voice] Recorded blob: ${blob.size} bytes, type: ${blob.type}`);
         stream.getTracks().forEach(t => t.stop());
-        await sendVoice(blob);
+        await sendVoice(blob, mediaRecorder.mimeType);
       };
 
-      mediaRecorder.start();
+      // Start Web Speech API for live transcription
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (SpeechRecognition) {
+        setText(''); // Clear input text for incoming transcription
+        const recognition = new SpeechRecognition();
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.lang = 'en-US';
+
+        recognition.onresult = (event) => {
+          let interimTranscript = '';
+          let finalTranscript = '';
+          for (let i = event.resultIndex; i < event.results.length; ++i) {
+            if (event.results[i].isFinal) {
+              finalTranscript += event.results[i][0].transcript;
+            } else {
+              interimTranscript += event.results[i][0].transcript;
+            }
+          }
+          const fullText = finalTranscript + interimTranscript;
+          setText(fullText);
+          
+          if (ref.current) {
+            ref.current.style.height = 'auto';
+            ref.current.style.height = Math.min(ref.current.scrollHeight, 120) + 'px';
+          }
+        };
+
+        recognition.onerror = (event) => {
+          console.error('Speech recognition error:', event.error);
+        };
+
+        recognitionRef.current = recognition;
+        recognition.start();
+      }
+
+      // ✅ timeslice=250ms — forces the encoder to flush audio data every 250ms
+      // Without this, Chrome/Edge only write the container header (~2300 bytes)
+      mediaRecorder.start(250);
       setRecording(true);
     } catch (err) {
+      console.error('Recording error:', err);
       alert('Microphone access denied. Please allow mic access in your browser.');
     }
   };
 
   const stopRecording = () => {
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+      recognitionRef.current = null;
+    }
     if (mediaRecorderRef.current && recording) {
       mediaRecorderRef.current.stop();
       setRecording(false);
@@ -64,9 +127,11 @@ export default function InputBar({ onSend, onVoiceReply, loading }) {
     }
   };
 
-  const sendVoice = async (blob) => {
+  const sendVoice = async (blob, mimeType) => {
+    // Pick correct file extension so the backend temp file is decoded properly
+    const ext = (mimeType || 'audio/webm').includes('ogg') ? 'ogg' : 'webm';
     const formData = new FormData();
-    formData.append('file', blob, 'recording.wav');
+    formData.append('file', blob, `recording.${ext}`);
 
     try {
       const res = await fetch('http://localhost:8000/chat-voice-input', {
@@ -85,16 +150,12 @@ export default function InputBar({ onSend, onVoiceReply, loading }) {
   };
 
   const handleMic = () => {
-  if (recording) {
-    // minimum 1 second before stopping
-    setTimeout(() => {
-      if (mediaRecorderRef.current) stopRecording();
-    }, 500);
-    stopRecording();
-  } else {
-    startRecording();
-  }
-};
+    if (recording) {
+      stopRecording();
+    } else {
+      startRecording();
+    }
+  };
 
   const micLabel = recording ? 'Recording... tap to stop' : processing ? 'Processing...' : 'ollama connected · llama 3.1 8b';
 
@@ -109,7 +170,7 @@ export default function InputBar({ onSend, onVoiceReply, loading }) {
           value={text}
           onChange={handleInput}
           onKeyDown={handleKeyDown}
-          placeholder={processing ? 'Transcribing...' : 'ask anything...'}
+          placeholder={recording ? 'Listening... speak now' : processing ? 'Transcribing...' : 'ask anything...'}
           disabled={processing}
           rows={1}
           style={{
@@ -135,7 +196,13 @@ export default function InputBar({ onSend, onVoiceReply, loading }) {
             }}
             aria-label={recording ? 'Stop recording' : 'Start recording'}
           >
-            <i className={`ti ${recording ? 'ti-microphone-off' : processing ? 'ti-loader' : 'ti-microphone'}`} style={{ fontSize: '15px' }} aria-hidden="true" />
+            {recording ? (
+              <IconMicrophoneOff size={16} />
+            ) : processing ? (
+              <IconLoader2 size={16} className="animate-spin" />
+            ) : (
+              <IconMicrophone size={16} />
+            )}
           </button>
           <button
             onClick={handleSend}
@@ -150,7 +217,7 @@ export default function InputBar({ onSend, onVoiceReply, loading }) {
             }}
             aria-label="Send message"
           >
-            <i className="ti ti-arrow-up" style={{ fontSize: '14px', color: '#fff' }} aria-hidden="true" />
+            <IconSend size={15} style={{ color: '#fff' }} />
           </button>
         </div>
       </div>

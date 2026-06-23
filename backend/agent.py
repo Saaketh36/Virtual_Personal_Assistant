@@ -18,8 +18,10 @@ qwen_model = Ollama(id="qwen2.5:7b", host=OLLAMA_HOST)
 CODE_KEYWORDS = ["code", "script", "python", "function", "debug", "error", "class ", "fix this", "write a program"]
 
 SEARCH_KEYWORDS = [
-    "latest", "current", "today", "news", "weather", "price",
-    "who is", "what is the current", "recent", "now", "2026", "search"
+    "latest", "current", "today", "news", "weather", "price", "stock",
+    "who", "what", "where", "when", "why", "how", "won", "winner", "score",
+    "president", "prime minister", "population", "temperature", "forecast",
+    "recent", "now", "2026", "search", "game", "match", "vs", "versus"
 ]
 
 
@@ -31,8 +33,14 @@ def pick_model(user_text: str):
 
 
 def needs_search(user_text: str) -> bool:
+    # First check if the tool was actually called during execution
+    from tools.web_search import web_search_called
+    if web_search_called.get():
+        return True
+    
+    # Fallback/pre-evaluation check for gating (can be used inside agent)
     text = user_text.lower()
-    return any(k in text for k in SEARCH_KEYWORDS)
+    return any(k in text for k in SEARCH_KEYWORDS) or text.strip().endswith("?")
 
 
 async def summarize_text(text: str) -> str:
@@ -44,6 +52,9 @@ async def summarize_text(text: str) -> str:
 
 
 async def generate_reply(user_text: str, session_id: str) -> str:
+    from tools.web_search import web_search_called
+    web_search_called.set(False)
+
     # 1. Retrieve relevant memory
     context = await get_relevant_context(user_text, session_id)
 
@@ -61,8 +72,10 @@ async def generate_reply(user_text: str, session_id: str) -> str:
     if context:
         system_message += f"Relevant memory:\n{context}\n"
 
-    # 4. Build and run agent — only attach tools when likely needed
-    tools = [search_web] if needs_search(user_text) else []
+    # 4. Build and run agent — attach search tool if query looks like a question/info query
+    text = user_text.lower()
+    has_search_trigger = any(k in text for k in SEARCH_KEYWORDS) or text.strip().endswith("?")
+    tools = [search_web] if has_search_trigger else []
 
     agent = Agent(
         model=model,

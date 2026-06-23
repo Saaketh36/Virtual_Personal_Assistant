@@ -1,15 +1,19 @@
 import httpx
 import os
 from dotenv import load_dotenv
+from contextvars import ContextVar
 
 load_dotenv()
 
 SERPER_API_KEY = os.getenv("SERPER_API_KEY")
 SERPER_URL = "https://google.serper.dev/search"
 
+web_search_called = ContextVar("web_search_called", default=False)
+
 
 async def search_web(query: str) -> str:
     """Search the web for current information and return a summary of top results."""
+    web_search_called.set(True)
     async with httpx.AsyncClient() as client:
         r = await client.post(
             SERPER_URL,

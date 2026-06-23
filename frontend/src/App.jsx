@@ -95,6 +95,25 @@ function App() {
     setMessages(prev => [...prev, userMsg, agentMsg])
   }
 
+  const deleteSession = (id) => {
+    setSessions(prev => {
+      const filtered = prev.filter(s => s.id !== id);
+      if (filtered.length === 0) {
+        const newId = `session_${Date.now()}`;
+        setActiveSession(newId);
+        return [{ id: newId, name: 'New conversation' }];
+      }
+      if (activeSession === id) {
+        setActiveSession(filtered[0].id);
+      }
+      return filtered;
+    });
+  };
+
+  const renameSession = (id, newName) => {
+    setSessions(prev => prev.map(s => s.id === id ? { ...s, name: newName } : s));
+  };
+
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: '#0a0812', fontFamily: 'inherit', width: '100%', position: 'relative', overflow: 'hidden' }}>
       <Topbar drawerOpen={drawerOpen} setDrawerOpen={setDrawerOpen} />
@@ -105,6 +124,8 @@ function App() {
         setSessions={setSessions}
         activeSession={activeSession}
         setActiveSession={setActiveSession}
+        onDeleteSession={deleteSession}
+        onRenameSession={renameSession}
       />
       <Messages messages={messages} loading={loading} />
       <InputBar onSend={sendMessage} onVoiceReply={handleVoiceReply} loading={loading} />

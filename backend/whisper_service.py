@@ -21,22 +21,32 @@ def root():
 async def transcribe(audio: UploadFile = File(...)):
     contents = await audio.read()
 
-    with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as f:
+    # Use the original file extension so FFmpeg decodes it correctly
+    ext = os.path.splitext(audio.filename or ".webm")[1] or ".webm"
+    print(f"Received: {audio.filename}, size: {len(contents)} bytes, ext: {ext}")
+
+    with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as f:
         f.write(contents)
         tmp_path = f.name
-        
-    print(f"File size: {os.path.getsize(tmp_path)} bytes")
+
+    print(f"Saved tmp file: {tmp_path} ({os.path.getsize(tmp_path)} bytes)")
     try:
         segments, info = model.transcribe(
             tmp_path,
-            beam_size=1,
-            vad_filter=False,
-
+            beam_size=5,
+            vad_filter=True,
+            vad_parameters=dict(
+                min_silence_duration_ms=500,
+                speech_pad_ms=200,
+            ),
+            no_speech_threshold=0.6,
+            condition_on_previous_text=False,
             language="en"
         )
 
         text = " ".join(
             s.text.strip() for s in segments
+            if s.no_speech_prob < 0.6
         )
 
         return {

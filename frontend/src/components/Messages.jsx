@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 const T = {
   text: '#fdebd0', text2: '#9a7e5a', text3: '#5a4830',
@@ -12,6 +12,132 @@ const T = {
   accent: '#c0152a', border2: '#312848',
   sendBg: 'linear-gradient(135deg,#c0152a,#7a0812)',
 };
+
+function formatContent(content) {
+  if (!content) return [];
+  const parts = [];
+  const regex = /```(\w*)\n([\s\S]*?)```/g;
+  let lastIndex = 0;
+  let match;
+
+  while ((match = regex.exec(content)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push({
+        type: 'text',
+        value: content.substring(lastIndex, match.index)
+      });
+    }
+    parts.push({
+      type: 'code',
+      language: match[1] || 'code',
+      value: match[2]
+    });
+    lastIndex = regex.lastIndex;
+  }
+
+  if (lastIndex < content.length) {
+    parts.push({
+      type: 'text',
+      value: content.substring(lastIndex)
+    });
+  }
+
+  return parts;
+}
+
+function CodeBlock({ language, code }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(code);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div style={{
+      background: '#07050d',
+      borderRadius: '8px',
+      border: '1px solid #201c32',
+      margin: '10px 0',
+      overflow: 'hidden',
+      fontFamily: 'SFMono-Regular, Consolas, Liberation Mono, monospace',
+      boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+      width: '100%'
+    }}>
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        padding: '8px 12px',
+        background: '#131025',
+        borderBottom: '1px solid #201c32',
+        color: '#9a7e5a',
+        textTransform: 'uppercase',
+        fontSize: '10px',
+        fontWeight: 600,
+        letterSpacing: '0.05em'
+      }}>
+        <span>{language}</span>
+        <button
+          onClick={handleCopy}
+          style={{
+            background: 'transparent',
+            border: 'none',
+            color: copied ? '#4ade80' : '#fdebd0',
+            cursor: 'pointer',
+            fontSize: '11px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px',
+            opacity: 0.8,
+            transition: 'opacity 0.2s'
+          }}
+        >
+          {copied ? 'Copied!' : 'Copy'}
+        </button>
+      </div>
+      <pre style={{
+        padding: '12px',
+        margin: 0,
+        overflowX: 'auto',
+        color: '#e5c7a3',
+        lineHeight: 1.5,
+        textAlign: 'left'
+      }}><code>{code}</code></pre>
+    </div>
+  );
+}
+
+function TextWithInlineCode({ text }) {
+  const parts = text.split(/(`[^`]+`)/g);
+  return (
+    <span>
+      {parts.map((part, index) => {
+        if (part.startsWith('`') && part.endsWith('`')) {
+          return (
+            <code
+              key={index}
+              style={{
+                background: '#201c32',
+                padding: '2px 5px',
+                borderRadius: '4px',
+                fontFamily: 'SFMono-Regular, Consolas, Liberation Mono, monospace',
+                fontSize: '12px',
+                color: '#c0152a',
+                border: '1px solid #2a2240',
+                margin: '0 2px'
+              }}
+            >
+              {part.slice(1, -1)}
+            </code>
+          );
+        }
+        return part;
+      })}
+    </span>
+  );
+}
 
 function TypingIndicator() {
   return (
@@ -57,6 +183,7 @@ function Message({ msg }) {
       display: 'flex', flexDirection: 'column', gap: '5px',
       maxWidth: '75%', alignSelf: isUser ? 'flex-end' : 'flex-start',
       alignItems: isUser ? 'flex-end' : 'flex-start',
+      animation: 'slideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards',
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
         {isUser ? (
@@ -90,9 +217,20 @@ function Message({ msg }) {
           padding: '10px 14px', fontSize: '13px', lineHeight: 1.65,
           color: isUser ? T.userText : T.text,
           borderRadius: isUser ? '12px 2px 12px 12px' : '2px 12px 12px 12px',
+          width: '100%',
+          boxSizing: 'border-box'
         }}
       >
-        {msg.content}
+        {(() => {
+          const parts = formatContent(msg.content);
+          if (parts.length === 0) return <TextWithInlineCode text={msg.content} />;
+          return parts.map((part, index) => {
+            if (part.type === 'code') {
+              return <CodeBlock key={index} language={part.language} code={part.value} />;
+            }
+            return <TextWithInlineCode key={index} text={part.value} />;
+          });
+        })()}
       </div>
 
       {msg.audio && (
@@ -132,7 +270,13 @@ export default function Messages({ messages, loading }) {
 
   return (
     <>
-      <style>{`@keyframes pulse { 0%,60%,100%{opacity:.3} 30%{opacity:1} }`}</style>
+      <style>{`
+        @keyframes pulse { 0%,60%,100%{opacity:.3} 30%{opacity:1} }
+        @keyframes slideIn {
+          from { opacity: 0; transform: translateY(8px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
       <div className="msg-area" style={{
         flex: 1, overflowY: 'auto', padding: '20px',
         display: 'flex', flexDirection: 'column', gap: '18px', scrollbarWidth: 'thin',
