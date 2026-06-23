@@ -21,18 +21,17 @@ def root():
 async def transcribe(audio: UploadFile = File(...)):
     contents = await audio.read()
 
-    with tempfile.NamedTemporaryFile(
-        suffix=".wav",
-        delete=False
-    ) as f:
+    with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as f:
         f.write(contents)
         tmp_path = f.name
-
+        
+    print(f"File size: {os.path.getsize(tmp_path)} bytes")
     try:
         segments, info = model.transcribe(
             tmp_path,
             beam_size=1,
-            vad_filter=True,
+            vad_filter=False,
+
             language="en"
         )
 
@@ -47,3 +46,4 @@ async def transcribe(audio: UploadFile = File(...)):
 
     finally:
         os.unlink(tmp_path)
+        
