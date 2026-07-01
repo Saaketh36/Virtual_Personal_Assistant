@@ -54,7 +54,7 @@ export default function SessionDrawer({
       background: '#0a0812e6',
       backdropFilter: 'blur(10px)',
       borderTop: '1px solid #251f3a',
-      transform: open ? 'translateY(0)' : 'translateY(-100%)',
+      transform: open ? 'translateY(0)' : 'translateY(calc(-100% - 50px))',
       transition: 'transform 0.25s cubic-bezier(0.4,0,0.2,1)',
     }}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '16px', height: '100%', overflowY: 'auto' }}>

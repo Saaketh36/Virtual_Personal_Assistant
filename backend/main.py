@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from agent import generate_reply, needs_search
 from tts import synthesize
+from email_routes import router as email_router
 import base64
 import httpx
 
@@ -15,6 +16,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(email_router)
 
 class ChatRequest(BaseModel):
     message: str

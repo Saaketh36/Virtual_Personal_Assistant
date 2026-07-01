@@ -1,11 +1,14 @@
 import { useState } from 'react'
 import Topbar from './components/Topbar'
 import SessionDrawer from './components/SessionDrawer'
+import EmailPanel from './components/EmailPanel'
 import Messages from './components/Messages'
 import InputBar from './components/InputBar'
 
 function App() {
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const [emailPanelOpen, setEmailPanelOpen] = useState(false)
+  const [unreadCount, setUnreadCount] = useState(0)
   const [sessions, setSessions] = useState([
     { id: 'default', name: "Today's session" }
   ])
@@ -116,7 +119,13 @@ function App() {
 
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: '#0a0812', fontFamily: 'inherit', width: '100%', position: 'relative', overflow: 'hidden' }}>
-      <Topbar drawerOpen={drawerOpen} setDrawerOpen={setDrawerOpen} />
+      <Topbar
+        drawerOpen={drawerOpen}
+        setDrawerOpen={setDrawerOpen}
+        emailPanelOpen={emailPanelOpen}
+        setEmailPanelOpen={setEmailPanelOpen}
+        unreadCount={unreadCount}
+      />
       <SessionDrawer
         open={drawerOpen}
         setOpen={setDrawerOpen}
@@ -126,6 +135,11 @@ function App() {
         setActiveSession={setActiveSession}
         onDeleteSession={deleteSession}
         onRenameSession={renameSession}
+      />
+      <EmailPanel
+        open={emailPanelOpen}
+        setOpen={setEmailPanelOpen}
+        onUpdateUnread={setUnreadCount}
       />
       <Messages messages={messages} loading={loading} />
       <InputBar onSend={sendMessage} onVoiceReply={handleVoiceReply} loading={loading} />
