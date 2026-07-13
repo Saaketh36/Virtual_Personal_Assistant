@@ -1,4 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
+import {
+  IconFileTypePdf,
+  IconDownload,
+} from '@tabler/icons-react';
 
 const T = {
   text: '#fdebd0', text2: '#9a7e5a', text3: '#5a4830',
@@ -109,7 +113,65 @@ function CodeBlock({ language, code }) {
   );
 }
 
+function PdfDownloadCard({ url }) {
+  const filename = decodeURIComponent(url.split('/').pop() || 'document.pdf');
+  const displayName = filename.length > 40 ? filename.slice(0, 37) + '...' : filename;
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noreferrer"
+      download
+      style={{
+        display: 'flex', alignItems: 'center', gap: '12px',
+        padding: '12px 16px', margin: '10px 0', borderRadius: '10px',
+        background: 'linear-gradient(135deg, rgba(192,21,42,0.08), rgba(19,16,37,0.6))',
+        border: '1px solid rgba(192,21,42,0.25)',
+        textDecoration: 'none',
+        transition: 'all 0.25s cubic-bezier(0.4,0,0.2,1)',
+        cursor: 'pointer',
+        boxShadow: '0 2px 12px rgba(0,0,0,0.3)',
+      }}
+      onMouseEnter={e => {
+        e.currentTarget.style.borderColor = 'rgba(192,21,42,0.5)';
+        e.currentTarget.style.boxShadow = '0 4px 20px rgba(192,21,42,0.15)';
+        e.currentTarget.style.transform = 'translateY(-1px)';
+      }}
+      onMouseLeave={e => {
+        e.currentTarget.style.borderColor = 'rgba(192,21,42,0.25)';
+        e.currentTarget.style.boxShadow = '0 2px 12px rgba(0,0,0,0.3)';
+        e.currentTarget.style.transform = 'translateY(0)';
+      }}
+    >
+      <div style={{
+        width: '38px', height: '38px', borderRadius: '8px',
+        background: 'linear-gradient(135deg, #c0152a, #7a0812)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        flexShrink: 0,
+        boxShadow: '0 2px 8px rgba(192,21,42,0.3)',
+      }}>
+        <IconFileTypePdf size={20} style={{ color: '#fff' }} />
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: '13px', fontWeight: 500, color: '#fdebd0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {displayName}
+        </div>
+        <div style={{ fontSize: '11px', color: '#9a7e5a', marginTop: '2px' }}>PDF Document · Click to download</div>
+      </div>
+      <div style={{
+        width: '30px', height: '30px', borderRadius: '6px',
+        background: 'rgba(192,21,42,0.15)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        flexShrink: 0,
+      }}>
+        <IconDownload size={15} style={{ color: '#c0152a' }} />
+      </div>
+    </a>
+  );
+}
+
 function TextWithInlineCode({ text }) {
+  if (!text) return null;
   const parts = text.split(/(`[^`]+`)/g);
   return (
     <span>
@@ -133,7 +195,25 @@ function TextWithInlineCode({ text }) {
             </code>
           );
         }
-        return part;
+        return part.split(/(https?:\/\/[^\s]+)/g).map((piece, pieceIndex) => {
+          if (piece.startsWith('http://') || piece.startsWith('https://')) {
+            if (piece.includes('/files/') && piece.toLowerCase().includes('.pdf')) {
+              return <PdfDownloadCard key={`${index}-${pieceIndex}`} url={piece} />;
+            }
+            return (
+              <a
+                key={`${index}-${pieceIndex}`}
+                href={piece}
+                target="_blank"
+                rel="noreferrer"
+                style={{ color: '#f0b35c', textDecoration: 'underline' }}
+              >
+                {piece}
+              </a>
+            );
+          }
+          return piece;
+        });
       })}
     </span>
   );
@@ -218,7 +298,8 @@ function Message({ msg }) {
           color: isUser ? T.userText : T.text,
           borderRadius: isUser ? '12px 2px 12px 12px' : '2px 12px 12px 12px',
           width: '100%',
-          boxSizing: 'border-box'
+          boxSizing: 'border-box',
+          whiteSpace: 'pre-wrap',
         }}
       >
         {(() => {

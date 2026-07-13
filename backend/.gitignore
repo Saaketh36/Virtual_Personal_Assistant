@@ -5,4 +5,6 @@ __pycache__/
 *.db
 .DS_Store
 credentials.json
-token.json
+token.json
+storage/
+*.log

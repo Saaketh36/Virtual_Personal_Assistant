@@ -24,38 +24,64 @@ function App() {
   ])
   const [loading, setLoading] = useState(false)
 
-  const sendMessage = async (text) => {
-    if (!text.trim() || loading) return
+  const sendMessage = async (text, attachment = null) => {
+    if ((!text.trim() && !attachment) || loading) return
 
     const userMsg = {
       id: Date.now(),
       role: 'user',
-      content: text,
+      content: attachment ? `${text || 'PDF request'}\n\nAttached: ${attachment.name}` : text,
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     }
     setMessages(prev => [...prev, userMsg])
     setLoading(true)
 
     try {
-      const res = await fetch('http://localhost:8000/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text, session_id: activeSession }),
-      })
+      let res
+      if (attachment) {
+        const controller = new AbortController()
+        const timeout = setTimeout(() => controller.abort(), 120000)
+        const formData = new FormData()
+        formData.append('message', text || 'Summarize this PDF')
+        formData.append('session_id', activeSession)
+        formData.append('file', attachment)
+        res = await fetch('http://localhost:8000/chat-pdf', {
+          method: 'POST',
+          body: formData,
+          signal: controller.signal,
+        })
+        clearTimeout(timeout)
+      } else {
+        res = await fetch('http://localhost:8000/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: text, session_id: activeSession }),
+        })
+      }
+      if (!res.ok) {
+        throw new Error(`Server error: ${res.status}`)
+      }
       const data = await res.json()
       setMessages(prev => [...prev, {
         id: Date.now() + 1,
         role: 'agent',
-        content: data.reply,
+        content: data.reply || 'The server returned an empty response. Please try again.',
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        model: data.model,
+        model: data.model || 'llama 3.1 8b',
         usedSearch: data.used_search,
       }])
-    } catch {
+    } catch (err) {
+      console.error('[PDF/Chat error]', err)
+      let msg = 'Something went wrong. Is the backend running?'
+      if (err?.name === 'AbortError') {
+        msg = 'The PDF request timed out. Try a smaller file or a simpler question.'
+      } else if (err?.message) {
+        msg = `Something went wrong: ${err.message}`
+      }
       setMessages(prev => [...prev, {
         id: Date.now() + 1,
         role: 'agent',
-        content: 'Something went wrong. Is the backend running?',
+        content: msg,
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         model: 'llama 3.1 8b',
       }])

@@ -1,5 +1,13 @@
 import { useState, useRef, useEffect } from 'react';
-import { IconMicrophone, IconMicrophoneOff, IconSend, IconLoader2 } from '@tabler/icons-react';
+import {
+  IconFileTypePdf,
+  IconLoader2,
+  IconMicrophone,
+  IconMicrophoneOff,
+  IconPaperclip,
+  IconSend,
+  IconX,
+} from '@tabler/icons-react';
 
 const T = {
   bg: '#0a0812', inputBg: '#131025', inputBorder: '#2a2240',
@@ -12,7 +20,9 @@ export default function InputBar({ onSend, onVoiceReply, loading }) {
   const [text, setText] = useState('');
   const [recording, setRecording] = useState(false);
   const [processing, setProcessing] = useState(false);
+  const [attachment, setAttachment] = useState(null);
   const ref = useRef(null);
+  const fileRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const chunksRef = useRef([]);
   const recognitionRef = useRef(null);
@@ -36,10 +46,23 @@ export default function InputBar({ onSend, onVoiceReply, loading }) {
   };
 
   const handleSend = () => {
-    if (!text.trim() || loading) return;
-    onSend(text.trim());
+    if ((!text.trim() && !attachment) || loading) return;
+    onSend(text.trim(), attachment);
     setText('');
+    setAttachment(null);
     if (ref.current) ref.current.style.height = 'auto';
+  };
+
+  const handleFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+      alert('Please attach a PDF file.');
+      e.target.value = '';
+      return;
+    }
+    setAttachment(file);
+    e.target.value = '';
   };
 
   const startRecording = async () => {
@@ -165,6 +188,13 @@ export default function InputBar({ onSend, onVoiceReply, loading }) {
         display: 'flex', alignItems: 'flex-end', gap: '8px',
         borderRadius: '12px', padding: '7px 10px',
       }}>
+        <input
+          ref={fileRef}
+          type="file"
+          accept="application/pdf,.pdf"
+          onChange={handleFileChange}
+          style={{ display: 'none' }}
+        />
         <textarea
           ref={ref}
           value={text}
@@ -182,6 +212,22 @@ export default function InputBar({ onSend, onVoiceReply, loading }) {
           }}
         />
         <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+          <button
+            onClick={() => fileRef.current?.click()}
+            disabled={processing || loading}
+            style={{
+              width: '30px', height: '30px', borderRadius: '8px',
+              border: `1px solid ${attachment ? '#c0152a' : T.border2}`,
+              background: attachment ? '#2a1018' : 'transparent',
+              cursor: processing || loading ? 'not-allowed' : 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: attachment ? '#fdebd0' : T.text2,
+            }}
+            aria-label="Attach PDF"
+            title="Attach PDF"
+          >
+            <IconPaperclip size={16} />
+          </button>
           <button
             onClick={handleMic}
             disabled={processing}
@@ -206,11 +252,11 @@ export default function InputBar({ onSend, onVoiceReply, loading }) {
           </button>
           <button
             onClick={handleSend}
-            disabled={!text.trim() || loading || processing}
+            disabled={(!text.trim() && !attachment) || loading || processing}
             style={{
               width: '30px', height: '30px', borderRadius: '8px', border: 'none',
-              background: (!text.trim() || loading || processing) ? '#2a1018' : T.sendBg,
-              cursor: (!text.trim() || loading || processing) ? 'not-allowed' : 'pointer',
+              background: ((!text.trim() && !attachment) || loading || processing) ? '#2a1018' : T.sendBg,
+              cursor: ((!text.trim() && !attachment) || loading || processing) ? 'not-allowed' : 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
               boxShadow: text.trim() && !loading ? '0 2px 8px #c0152a44' : 'none',
               transition: 'transform 0.1s',
@@ -222,9 +268,32 @@ export default function InputBar({ onSend, onVoiceReply, loading }) {
         </div>
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '7px', padding: '0 2px' }}>
-        <div style={{ fontSize: '11px', color: recording ? '#c0152a' : T.hintText }}>
-          <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: recording ? '#c0152a' : '#4ade80', display: 'inline-block', marginRight: '5px' }} />
-          {micLabel}
+        <div style={{ fontSize: '11px', color: recording ? '#c0152a' : T.hintText, display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+          {attachment ? (
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', gap: '5px',
+              maxWidth: '260px', overflow: 'hidden', whiteSpace: 'nowrap',
+              textOverflow: 'ellipsis', color: T.text2,
+            }}>
+              <IconFileTypePdf size={14} />
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{attachment.name}</span>
+              <button
+                onClick={() => setAttachment(null)}
+                style={{
+                  border: 'none', background: 'transparent', color: T.text2,
+                  cursor: 'pointer', padding: 0, display: 'inline-flex',
+                }}
+                aria-label="Remove PDF"
+              >
+                <IconX size={13} />
+              </button>
+            </span>
+          ) : (
+            <span>
+              <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: recording ? '#c0152a' : '#4ade80', display: 'inline-block', marginRight: '5px' }} />
+              {micLabel}
+            </span>
+          )}
         </div>
         <div style={{ fontSize: '11px', color: T.hintText }}>enter to send</div>
       </div>

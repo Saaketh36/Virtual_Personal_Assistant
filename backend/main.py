@@ -1,9 +1,11 @@
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, Form, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from agent import generate_reply, needs_search
 from tts import synthesize
 from email_routes import router as email_router
+from tools.pdf_tool import PDF_OUTPUT_DIR, save_uploaded_pdf
 import base64
 import httpx
 
@@ -17,6 +19,7 @@ app.add_middleware(
 )
 
 app.include_router(email_router)
+app.mount("/files", StaticFiles(directory=str(PDF_OUTPUT_DIR)), name="files")
 
 class ChatRequest(BaseModel):
     message: str
@@ -30,12 +33,21 @@ def root():
 
 @app.post("/chat")
 async def chat(req: ChatRequest):
-    reply = await generate_reply(req.message, req.session_id)
-    return {
-        "reply": reply,
-        "used_search": needs_search(req.message),
-        "model": "llama 3.1 8b",
-    }
+    try:
+        reply = await generate_reply(req.message, req.session_id)
+        return {
+            "reply": reply,
+            "used_search": needs_search(req.message),
+            "model": "Groq",
+        }
+    except Exception as exc:
+        import traceback
+        traceback.print_exc()
+        return {
+            "reply": f"Something went wrong: {exc}",
+            "used_search": False,
+            "model": "Groq",
+        }
 
 
 @app.post("/chat-voice")
@@ -47,7 +59,7 @@ async def chat_voice(req: ChatRequest):
         "reply": reply,
         "audio": audio_b64,
         "used_search": needs_search(req.message),
-        "model": "llama 3.1 8b",
+        "model": "Groq",
     }
 
 
@@ -74,5 +86,48 @@ async def chat_voice_input(file: UploadFile = File(...)):
         "reply": reply,
         "audio": audio_b64,
         "used_search": needs_search(transcript),
-        "model": "llama 3.1 8b",
+        "model": "Groq",
     }
+
+
+@app.post("/chat-pdf")
+async def chat_pdf(
+    message: str = Form(...),
+    session_id: str = Form("default"),
+    file: UploadFile | None = File(None),
+):
+    try:
+        pdf_path = None
+        pdf_filename = None
+
+        if file and file.filename:
+            pdf_bytes = await file.read()
+            saved = save_uploaded_pdf(file.filename, pdf_bytes)
+            if not saved.get("success"):
+                return {
+                    "reply": saved.get("error", "I could not save that PDF."),
+                    "used_search": False,
+                    "model": "Groq",
+                }
+            pdf_path = saved["path"]
+            pdf_filename = saved["filename"]
+
+        reply = await generate_reply(
+            message,
+            session_id,
+            pdf_path=pdf_path,
+            pdf_filename=pdf_filename,
+        )
+        return {
+            "reply": reply,
+            "used_search": False,
+            "model": "Groq",
+        }
+    except Exception as exc:
+        import traceback
+        traceback.print_exc()
+        return {
+            "reply": f"Something went wrong while processing the PDF: {exc}",
+            "used_search": False,
+            "model": "Groq",
+        }

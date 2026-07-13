@@ -8,20 +8,28 @@ load_dotenv()
 DB_URL = os.getenv("DATABASE_URL")
 
 
-async def get_relevant_context(query: str, session_id: str) -> str:
+async def get_relevant_context(
+    query: str,
+    session_id: str,
+    *,
+    min_similarity: float = 0.58,
+    include_summaries: bool = True,
+) -> str:
     vec = await embed(query)
     vec_str = "[" + ",".join(str(x) for x in vec) + "]"
 
     conn = await asyncpg.connect(DB_URL)
     try:
         rows = await conn.fetch("""
-            SELECT content, summary,
+            SELECT content, summary, created_at,
                    1 - (embedding <=> $1::vector) AS sim
             FROM conversations
             WHERE session_id = $2
+              AND ($3::boolean OR summary IS NULL)
+              AND 1 - (embedding <=> $1::vector) >= $4
             ORDER BY embedding <=> $1::vector
-            LIMIT 6
-        """, vec_str, session_id)
+            LIMIT 4
+        """, vec_str, session_id, include_summaries, min_similarity)
 
         if not rows:
             return ""
@@ -33,6 +41,25 @@ async def get_relevant_context(query: str, session_id: str) -> str:
             else:
                 parts.append(r["content"])
         return "\n---\n".join(parts)
+    finally:
+        await conn.close()
+
+
+async def get_recent_context(session_id: str, limit: int = 4) -> str:
+    conn = await asyncpg.connect(DB_URL)
+    try:
+        rows = await conn.fetch("""
+            SELECT content
+            FROM conversations
+            WHERE session_id = $1 AND summary IS NULL
+            ORDER BY created_at DESC
+            LIMIT $2
+        """, session_id, limit)
+
+        if not rows:
+            return ""
+
+        return "\n---\n".join(r["content"] for r in reversed(rows))
     finally:
         await conn.close()
 

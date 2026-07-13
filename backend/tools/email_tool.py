@@ -45,19 +45,23 @@ def _get_header(headers: list, name: str) -> str:
     return ""
 
 
-def send_email(to: str, subject: str, body: str) -> dict:
+def send_email(to: str, subject: str, body: str, cc: str = None, bcc: str = None) -> dict:
     """Send an email via Gmail API. Returns status dict."""
     try:
         service = get_gmail_service()
         msg = MIMEMultipart("alternative")
         msg["To"] = to
+        if cc:
+            msg["Cc"] = cc
+        if bcc:
+            msg["Bcc"] = bcc
         msg["Subject"] = subject
         msg.attach(MIMEText(body, "plain"))
         raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
         sent = service.users().messages().send(userId="me", body={"raw": raw}).execute()
         return _record_email_action("send", {
             "success": True,
-            "message": f"Email sent to {to}",
+            "message": f"Email sent to {to}" + (f" (Cc: {cc})" if cc else ""),
             "message_id": sent.get("id"),
             "thread_id": sent.get("threadId"),
         })
@@ -180,12 +184,16 @@ def reply_to_email(thread_id: str, message_id: str, to: str, subject: str, body:
         return _record_email_action("reply", {"success": False, "error": str(e)})
 
 
-def draft_email(to: str, subject: str, body: str) -> dict:
+def draft_email(to: str, subject: str, body: str, cc: str = None, bcc: str = None) -> dict:
     """Save an email as a draft (does not send)."""
     try:
         service = get_gmail_service()
         msg = MIMEMultipart("alternative")
         msg["To"] = to
+        if cc:
+            msg["Cc"] = cc
+        if bcc:
+            msg["Bcc"] = bcc
         msg["Subject"] = subject
         msg.attach(MIMEText(body, "plain"))
         raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
@@ -195,7 +203,7 @@ def draft_email(to: str, subject: str, body: str) -> dict:
         return _record_email_action("draft", {
             "success": True,
             "draft_id": draft["id"],
-            "message": f"Draft saved for {to}",
+            "message": f"Draft saved for {to}" + (f" (Cc: {cc})" if cc else ""),
         })
     except Exception as e:
         return _record_email_action("draft", {"success": False, "error": str(e)})
