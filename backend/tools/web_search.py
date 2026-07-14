@@ -13,7 +13,6 @@ web_search_called = ContextVar("web_search_called", default=False)
 
 async def search_web(query: str) -> str:
     """Search the web for current information and return a summary of top results."""
-    web_search_called.set(True)
     async with httpx.AsyncClient() as client:
         r = await client.post(
             SERPER_URL,
@@ -25,6 +24,7 @@ async def search_web(query: str) -> str:
         )
         r.raise_for_status()
         data = r.json()
+        web_search_called.set(True)
 
     results = []
 

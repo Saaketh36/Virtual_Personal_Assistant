@@ -71,7 +71,7 @@ export default function Topbar({ drawerOpen, setDrawerOpen, emailPanelOpen, setE
           )}
         </button>
 
-        {['ti-paperclip', 'ti-settings'].map((icon, i) => (
+        {['ti-settings'].map((icon, i) => (
           <button key={i} style={{
             width: '30px', height: '30px', borderRadius: '8px',
             border: `1px solid ${THEME.border}`, background: 'transparent',

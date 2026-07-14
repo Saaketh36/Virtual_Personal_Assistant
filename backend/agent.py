@@ -351,12 +351,13 @@ def format_email_action_result(action: str, result: dict) -> str:
 
 
 def needs_search(user_text: str) -> bool:
-    # First check if the tool was actually called during execution
+    """Return whether web search actually succeeded during this request."""
     from tools.web_search import web_search_called
-    if web_search_called.get():
-        return True
-    
-    # Fallback/pre-evaluation check for gating (can be used inside agent)
+    return web_search_called.get()
+
+
+def should_search(user_text: str) -> bool:
+    """Return whether the user query should be answered with fresh web context."""
     text = user_text.lower()
     return any(k in text for k in SEARCH_KEYWORDS) or text.strip().endswith("?")
 
@@ -937,12 +938,26 @@ async def generate_reply(
 
     # 4. Build and run agent — attach tools based on query type
     text = user_text.lower()
-    has_search_trigger = any(k in text for k in SEARCH_KEYWORDS) or text.strip().endswith("?")
+    has_search_trigger = should_search(user_text)
     has_email_trigger = needs_email(user_text)
 
-    tools = []
     if has_search_trigger:
-        tools.append(search_web)
+        try:
+            search_results = await search_web(user_text)
+            system_message += (
+                "\nWEB SEARCH RESULTS:\n"
+                f"{search_results}\n\n"
+                "Use these fresh search results when answering. "
+                "Do not say you lack real-time access if search results are provided.\n"
+            )
+        except Exception as exc:
+            system_message += (
+                "\nWEB SEARCH STATUS:\n"
+                f"Web search was attempted but failed: {exc}\n"
+                "Tell the user search failed and answer only if the answer is available from non-current knowledge.\n"
+            )
+
+    tools = []
     if has_email_trigger:
         tools += [send_email, read_inbox, search_emails, reply_to_email, draft_email]
 
