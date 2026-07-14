@@ -39,7 +39,7 @@ SEARCH_KEYWORDS = [
 
 EMAIL_KEYWORDS = [
     "send email", "send an email", "email to", "mail to", "write an email",
-    "compose email", "draft email", "draft an email",
+    "write a mail", "write mail", "compose email", "draft email", "draft an email",
     "read email", "check email", "check my email", "open email",
     "inbox", "unread", "my emails", "new emails",
     "reply to", "reply to email", "respond to email",
@@ -49,10 +49,13 @@ EMAIL_KEYWORDS = [
 
 PDF_KEYWORDS = [
     "pdf", "document", "extract text", "summarize pdf", "summarise pdf",
-    "make a pdf", "create a pdf", "generate a pdf", "modify pdf",
-    "update section", "replace section", "change section",
-    "create pdf", "make pdf", "generate pdf", "write pdf",
+    "modify pdf", "update section", "replace section", "change section",
 ]
+
+# Regex for "make/create/generate/write [any words] pdf" — catches adjectives
+_PDF_CREATE_RE = re.compile(
+    r"\b(make|create|generate|write|build|produce)\b.{0,40}\bpdf\b"
+)
 
 PDF_FOLLOWUP_KEYWORDS = [
     "change", "replace", "update", "modify", "edit",
@@ -70,6 +73,14 @@ PDF_STYLE_KEYWORDS = [
 ]
 
 EMAIL_ADDRESS_RE = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
+EMAIL_CONTINUATION_WORDS = (
+    "asking", "ask", "saying", "say", "subject", "body", "message", "content",
+    "had", "have", "having", "about", "regarding", "for", "with", "cc", "bcc",
+)
+COMMON_EMAIL_TLDS = (
+    "co.in", "co.uk", "com.au", "com", "net", "org", "edu", "gov", "io", "ai",
+    "dev", "in", "co", "uk",
+)
 PENDING_EMAILS: dict[str, dict] = {}
 SESSION_PDFS: dict[str, dict] = {}
 
@@ -96,7 +107,9 @@ def needs_email(user_text: str) -> bool:
 
 def needs_pdf(user_text: str, pdf_path: str | None = None, session_id: str | None = None) -> bool:
     text = user_text.lower()
-    if bool(pdf_path) or any(k in text for k in PDF_KEYWORDS):
+    if bool(pdf_path):
+        return True
+    if any(k in text for k in PDF_KEYWORDS) or bool(_PDF_CREATE_RE.search(text)):
         return True
     if session_id and session_id in SESSION_PDFS:
         if any(k in text for k in PDF_FOLLOWUP_KEYWORDS):
@@ -123,21 +136,63 @@ def is_email_write_request(user_text: str) -> bool:
     text = user_text.lower()
     write_keywords = [
         "send email", "send an email", "email to", "mail to",
+        "write a mail", "write mail",
         "reply to", "reply to email", "respond to email",
         "draft email", "draft an email", "compose email",
     ]
     return any(k in text for k in write_keywords)
 
 
+def _normalize_email_text(text: str) -> str:
+    normalized = re.sub(r"\s+at\s+", "@", text, flags=re.IGNORECASE)
+    normalized = re.sub(r"\s+dot\s+", ".", normalized, flags=re.IGNORECASE)
+    return normalized
+
+
+def _split_email_candidate(candidate: str) -> tuple[str, str]:
+    if "@" not in candidate:
+        return candidate, ""
+
+    local, domain = candidate.split("@", 1)
+    domain_lower = domain.lower()
+    for tld in COMMON_EMAIL_TLDS:
+        marker = f".{tld}"
+        idx = domain_lower.find(marker)
+        if idx == -1:
+            continue
+
+        end = idx + len(marker)
+        suffix = domain[end:]
+        if not suffix or suffix.lower().startswith(EMAIL_CONTINUATION_WORDS):
+            return f"{local}@{domain[:end]}", suffix
+
+    return candidate, ""
+
+
+def _extract_email_matches(text: str) -> list[dict]:
+    matches = []
+    for match in EMAIL_ADDRESS_RE.finditer(text):
+        email, suffix = _split_email_candidate(match.group(0))
+        end = match.start() + len(email)
+        matches.append({
+            "email": email,
+            "start": match.start(),
+            "end": end,
+            "suffix": suffix,
+        })
+    return matches
+
+
 def _extract_labeled_value(text: str, labels: list[str], stop_labels: list[str]) -> str:
-    label_pattern = "|".join(re.escape(label) for label in labels)
-    stop_pattern = "|".join(re.escape(label) for label in stop_labels)
+    label_pattern = "|".join(rf"\b{re.escape(label)}\b" for label in labels)
+    stop_pattern = "|".join(rf"\b{re.escape(label)}\b" for label in stop_labels)
     match = re.search(
         rf"(?:{label_pattern})\s*[:\-]?\s*(.+?)(?=\s+(?:{stop_pattern})\s*[:\-]?|$)",
         text,
         flags=re.IGNORECASE | re.DOTALL,
     )
-    return match.group(1).strip(" .\n\t\"'") if match else ""
+    value = match.group(1).strip(" .\n\t\"'") if match else ""
+    return "" if value.lower() in {"it", "with it"} else value
 
 
 def is_approval(text: str) -> bool:
@@ -154,43 +209,45 @@ def is_rejection(text: str) -> bool:
 
 def parse_direct_email_request(user_text: str) -> dict | None:
     """Parse straightforward send/draft commands without relying on tool calling."""
-    text = user_text.strip()
+    text = _normalize_email_text(user_text.strip())
     lowered = text.lower()
     if not is_email_write_request(text):
         return None
     if any(k in lowered for k in ["reply to", "reply to email", "respond to email"]):
         return None
 
-    emails = EMAIL_ADDRESS_RE.findall(text)
-    if not emails:
+    email_matches = _extract_email_matches(text)
+    if not email_matches:
         return {
             "error": "I need the recipient's email address before I can send it.",
         }
 
-    to_email = emails[0]
+    to_email = email_matches[0]["email"]
     cc_email = None
     bcc_email = None
 
     # Check for CC/BCC patterns in the text
     cc_match = re.search(r"cc\s*[:\-]?\s*([\w.+-]+@[\w-]+(?:\.[\w-]+)+)", lowered)
     if cc_match:
-        cc_email = cc_match.group(1)
-    elif len(emails) > 1:
-        for email in emails[1:]:
-            pos = lowered.find(email)
+        cc_email = _split_email_candidate(cc_match.group(1))[0]
+    elif len(email_matches) > 1:
+        for email_match in email_matches[1:]:
+            email = email_match["email"]
+            pos = email_match["start"]
             prefix = lowered[max(0, pos-25):pos]
             if "cc" in prefix or "copy" in prefix:
                 cc_email = email
                 break
         if not cc_email:
-            cc_email = emails[1]
+            cc_email = email_matches[1]["email"]
 
     # Similar for BCC
     bcc_match = re.search(r"bcc\s*[:\-]?\s*([\w.+-]+@[\w-]+(?:\.[\w-]+)+)", lowered)
     if bcc_match:
-        bcc_email = bcc_match.group(1)
-    elif len(emails) > 2 and not bcc_email:
-        for email in emails[1:]:
+        bcc_email = _split_email_candidate(bcc_match.group(1))[0]
+    elif len(email_matches) > 2 and not bcc_email:
+        for email_match in email_matches[1:]:
+            email = email_match["email"]
             if email != cc_email:
                 bcc_email = email
                 break
@@ -206,7 +263,7 @@ def parse_direct_email_request(user_text: str) -> dict | None:
         ["subject", "sub"],
     )
 
-    after_email = text[EMAIL_ADDRESS_RE.search(text).end():].strip(" .,\n\t")
+    after_email = text[email_matches[0]["end"]:].strip(" .,\n\t")
     if not body:
         body_match = re.search(
             r"(?:that|saying|say|message|body|content)\s+(.+)$",
@@ -316,6 +373,7 @@ def _download_line(result: dict) -> str:
     return f"Download it here: http://localhost:8000{result['url']}"
 
 
+
 def _extract_topic(user_text: str) -> str:
     patterns = [
         r"(?:make|create|generate|write)\s+(?:a\s+)?pdf\s+(?:on|about|for)\s+(.+)$",
@@ -328,30 +386,36 @@ def _extract_topic(user_text: str) -> str:
     return user_text.strip()
 
 
-def _parse_find_replace(user_text: str) -> dict | None:
-    # Pattern 1: change/replace [something] from/to <val1> to/with <val2>
-    match1 = re.search(
-        r"(?:change|replace|update)\s+(?:.+?\s+)?(?:from|to)\s+[\"']?(.+?)[\"']?\s+(?:to|with)\s+[\"']?(.+?)[\"']?(?:$|\s|in\s|on\s|with\s)",
-        user_text,
-        re.IGNORECASE | re.DOTALL
+def _clean_find_replace_value(value: str) -> str:
+    value = re.sub(r"\s+", " ", value or "").strip(" .\n\t\"'")
+    value = re.sub(
+        r"\s+(?:in|inside|on)\s+(?:the\s+)?(?:pdf|document|file)\s*$",
+        "",
+        value,
+        flags=re.IGNORECASE,
     )
-    if match1:
-        val1 = match1.group(1).strip(" .\"'")
-        val2 = match1.group(2).strip(" .\"'")
-        if val1 and val2:
-            return {"find": val1, "replace": val2}
+    return value.strip(" .\n\t\"'")
 
-    # Pattern 2: change/replace <val1> to/with <val2>
-    match2 = re.search(
-        r"(?:change|replace|update)\s+[\"']?(.+?)[\"']?\s+(?:to|with)\s+[\"']?(.+?)[\"']?(?:$|\s|in\s|on\s)",
-        user_text,
-        re.IGNORECASE | re.DOTALL
-    )
-    if match2:
-        val1 = match2.group(1).strip(" .\"'")
-        val2 = match2.group(2).strip(" .\"'")
-        if val1 and val2:
-            return {"find": val1, "replace": val2}
+
+def _parse_find_replace(user_text: str) -> dict | None:
+    text = re.sub(r"\s+", " ", user_text.strip())
+
+    patterns = [
+        # Example: Change NAME from MANDAVA SRI NAAGA SAAKETH to MANDAVA PRATHIMA
+        r"\b(?:change|replace|update)\b(?:\s+(?!from\b).+?)?\s+from\s+(?P<find>.+?)\s+(?:to|with)\s+(?P<replace>.+)$",
+        # Example: Replace MANDAVA SRI NAAGA SAAKETH with MANDAVA PRATHIMA
+        r"\b(?:change|replace|update)\b\s+(?P<find>.+?)\s+(?:to|with)\s+(?P<replace>.+)$",
+    ]
+
+    for pattern in patterns:
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+        if not match:
+            continue
+
+        find_value = _clean_find_replace_value(match.group("find"))
+        replace_value = _clean_find_replace_value(match.group("replace"))
+        if find_value and replace_value:
+            return {"find": find_value, "replace": replace_value}
 
     return None
 
@@ -385,6 +449,15 @@ async def resolve_find_replace_with_llm(user_text: str, pdf_text: str) -> dict |
     except Exception as e:
         print(f"Error in LLM find/replace resolution: {e}")
     return None
+
+
+def _preserve_requested_replacement(parsed: dict, resolved: dict | None) -> dict | None:
+    if not resolved:
+        return None
+    return {
+        "find": resolved.get("find") or parsed["find"],
+        "replace": parsed["replace"],
+    }
 
 
 def _parse_section_edit(user_text: str) -> dict:
@@ -437,7 +510,10 @@ async def handle_pdf_request(
     pdf_filename: str | None = None,
 ) -> str:
     text = user_text.lower()
-    has_create_trigger = any(k in text for k in ["make a pdf", "create a pdf", "generate a pdf", "write a pdf", "make pdf", "create pdf", "generate pdf", "write pdf"])
+    has_create_trigger = bool(re.search(
+        r"\b(make|create|generate|write|build|produce)\b.{0,40}\bpdf\b",
+        text,
+    ))
     has_modify_trigger = any(k in text for k in ["modify", "update section", "replace section", "change section"])
     has_summary_trigger = any(k in text for k in ["summarize", "summarise", "summary"])
     has_extract_trigger = any(k in text for k in ["extract", "text from", "read this pdf", "read the pdf"])
@@ -538,8 +614,11 @@ async def handle_pdf_request(
             return f"I created a neat PDF about {topic}.\n{_download_line(result)}"
         else:
             writer_prompt = (
-                "Create clean, well-structured PDF content for the requested topic.\n"
-                "Use a short title, clear section headings, concise paragraphs, and practical bullet points.\n"
+                "Write a comprehensive, well-structured document about the following topic.\n"
+                "Structure the document with clear section headings (use **Heading** on its own line).\n"
+                "Write each section as multiple full paragraphs of flowing prose — do NOT use bullet points, numbered lists, or point-wise formatting.\n"
+                "Each section should be detailed, informative, and written in a professional academic tone.\n"
+                "Aim for at least 3 to 5 paragraphs per section.\n"
                 "Do not include markdown table syntax. Keep it polished and readable.\n\n"
                 f"Topic/request: {topic}\n"
             )
@@ -682,6 +761,7 @@ async def handle_pdf_request(
             # Direct match failed, attempt LLM resolution fallback
             if pdf_text:
                 resolved = await resolve_find_replace_with_llm(user_text, pdf_text)
+                resolved = _preserve_requested_replacement(find_replace, resolved)
                 if resolved:
                     result = find_replace_in_pdf(pdf_path, resolved["find"], resolved["replace"])
                     if result.get("success"):
@@ -774,11 +854,7 @@ async def generate_reply(
         context_parts.append(f"Relevant long-term memory:\n{long_term_context}")
     context = "\n\n".join(context_parts)
 
-    if needs_pdf(user_text, pdf_path, session_id) or is_pdf_style_followup(user_text, session_id):
-        reply = await handle_pdf_request(user_text, session_id, context, pdf_path, pdf_filename)
-        await save_conversation(user_text, reply, session_id)
-        return reply
-
+    # ── Email routing (check BEFORE PDF to avoid mis-routing "write a mail" as PDF) ──
     pending_email = PENDING_EMAILS.get(session_id)
     if pending_email:
         user_approval_text = user_text.lower()
@@ -832,6 +908,12 @@ async def generate_reply(
             PENDING_EMAILS[session_id] = direct_email
             reply = format_pending_email(direct_email)
 
+        await save_conversation(user_text, reply, session_id)
+        return reply
+
+    # ── PDF routing (after email, so "write a mail" doesn't get caught) ──
+    if needs_pdf(user_text, pdf_path, session_id) or is_pdf_style_followup(user_text, session_id):
+        reply = await handle_pdf_request(user_text, session_id, context, pdf_path, pdf_filename)
         await save_conversation(user_text, reply, session_id)
         return reply
 

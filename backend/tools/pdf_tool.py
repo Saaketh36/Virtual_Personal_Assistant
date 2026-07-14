@@ -443,31 +443,70 @@ def _pdf_draw_inline_line(page, x: float, y: float, text: str, fontsize: int, co
         x += fitz.get_text_length(part, fontname=fontname, fontsize=fontsize)
 
 
-def _pdf_new_page(doc, title: str, page_width: float, page_height: float, margin: float, first: bool = False):
+def _pdf_new_page(doc, title: str, page_number: int, page_width: float, page_height: float, margin: float, first: bool = False):
+    """Create a new page with a refined header and footer band."""
     fitz = _fitz()
     page = doc.new_page(width=page_width, height=page_height)
+
+    # ── header (all pages except first) ──────────────────────────────────────
     if not first:
+        header_y = 38
+        # Document title — left aligned, small caps style
         page.insert_text(
-            fitz.Point(margin, 34),
-            title[:90],
-            fontsize=9,
+            fitz.Point(margin, header_y),
+            title[:70].upper(),
+            fontsize=7.5,
             fontname="Helvetica-Bold",
             color=PDF_MUTED_COLOR,
         )
-        page.draw_line(
-            fitz.Point(margin, 44),
-            fitz.Point(page_width - margin, 44),
-            color=(0.86, 0.86, 0.88),
-            width=0.6,
+        # Page number — right aligned
+        page_label = f"Page {page_number}"
+        label_w = fitz.get_text_length(page_label, fontname="Helvetica", fontsize=7.5)
+        page.insert_text(
+            fitz.Point(page_width - margin - label_w, header_y),
+            page_label,
+            fontsize=7.5,
+            fontname="Helvetica",
+            color=PDF_MUTED_COLOR,
         )
+        # Thin hairline rule below header
+        page.draw_line(
+            fitz.Point(margin, header_y + 8),
+            fitz.Point(page_width - margin, header_y + 8),
+            color=(0.82, 0.82, 0.85),
+            width=0.5,
+        )
+
+    # ── footer band ───────────────────────────────────────────────────────────
+    footer_y = page_height - 28
+    # Thin rule above footer
+    page.draw_line(
+        fitz.Point(margin, footer_y - 10),
+        fitz.Point(page_width - margin, footer_y - 10),
+        color=(0.82, 0.82, 0.85),
+        width=0.5,
+    )
+    # Small accent dot + "Virtual Assist" branding centred
+    brand = "Virtual Assist"
+    brand_w = fitz.get_text_length(brand, fontname="Helvetica", fontsize=7.5)
+    page.insert_text(
+        fitz.Point((page_width - brand_w) / 2, footer_y),
+        brand,
+        fontsize=7.5,
+        fontname="Helvetica",
+        color=PDF_MUTED_COLOR,
+    )
+
     return page
 
 
-def _pdf_ensure_space(doc, page, y: float, needed: float, title: str, page_width: float, page_height: float, margin: float):
+def _pdf_ensure_space(doc, page, y: float, needed: float, title: str, page_number_ref: list, page_width: float, page_height: float, margin: float):
+    """Return (page, y) — creates a new page if there isn't enough vertical room."""
     if y + needed <= page_height - PDF_FOOTER_HEIGHT:
         return page, y
-    page = _pdf_new_page(doc, title, page_width, page_height, margin)
-    return page, margin + 10
+    page_number_ref[0] += 1
+    page = _pdf_new_page(doc, title, page_number_ref[0], page_width, page_height, margin)
+    return page, margin + 18
 
 
 def _pdf_is_heading(line: str) -> bool:
@@ -502,7 +541,7 @@ def _pdf_body_blocks(body: str) -> list[dict]:
             blocks.append({"type": "heading", "text": _pdf_clean_heading(line)})
         elif re.match(r"^[*\-\u2022]\s+", line) or re.match(r"^\d+[.)]\s+", line):
             flush_paragraph()
-            blocks.append({"type": "paragraph", "text": line})
+            blocks.append({"type": "bullet", "text": line})
         else:
             paragraph_lines.append(line)
 
@@ -521,33 +560,35 @@ def _pdf_draw_text_block(
     page_width: float,
     page_height: float,
     margin: float,
-    fontsize: int = 11,
+    page_number_ref: list,
+    fontsize: float = 11,
     color=PDF_BODY_COLOR,
     prefix: str = "",
 ):
     fitz = _fitz()
-    line_height = fontsize * 1.45
+    line_height = fontsize * 1.58
     prefix_width = 0.0
     if prefix:
         if prefix == f"{PDF_BULLET} ":
-            prefix_width = 16
+            prefix_width = 18
         else:
             prefix_width = fitz.get_text_length(prefix, fontname="Helvetica-Bold", fontsize=fontsize) + 8
 
     lines = _pdf_wrap_inline_text(text, max(24, width - prefix_width), fontsize) or [""]
     for index, line in enumerate(lines):
-        page, y = _pdf_ensure_space(doc, page, y, line_height, title, page_width, page_height, margin)
+        page, y = _pdf_ensure_space(doc, page, y, line_height, title, page_number_ref, page_width, page_height, margin)
         line_x = x + (prefix_width if prefix else 0)
         if index == 0 and prefix:
             if prefix == f"{PDF_BULLET} ":
-                page.draw_circle(fitz.Point(x + 4, y - 4), 1.7, color=color, fill=color)
+                # Filled circle bullet
+                page.draw_circle(fitz.Point(x + 5, y - fontsize * 0.30), 2.0, color=PDF_ACCENT_COLOR, fill=PDF_ACCENT_COLOR)
             else:
                 page.insert_text(
                     fitz.Point(x, y),
                     prefix,
                     fontsize=fontsize,
                     fontname="Helvetica-Bold",
-                    color=color,
+                    color=PDF_ACCENT_COLOR,
                 )
         _pdf_draw_inline_line(page, line_x, y, line, fontsize, color)
         y += line_height
@@ -555,33 +596,22 @@ def _pdf_draw_text_block(
     return page, y
 
 
-def _pdf_draw_paragraph(doc, page, title: str, text: str, x: float, y: float, width: float, page_width: float, page_height: float, margin: float):
+def _pdf_draw_paragraph(doc, page, title: str, text: str, x: float, y: float, width: float, page_width: float, page_height: float, margin: float, page_number_ref: list, is_bullet: bool = False):
     text = text.strip()
     prefix = ""
-    bullet_match = re.match(r"^[*\-\u2022]\s+(.*)$", text)
-    number_match = re.match(r"^(\d+[.)])\s+(.*)$", text)
-
-    if bullet_match:
-        prefix = f"{PDF_BULLET} "
-        text = bullet_match.group(1).strip()
-    elif number_match:
-        prefix = f"{number_match.group(1)} "
-        text = number_match.group(2).strip()
+    if is_bullet:
+        bullet_match = re.match(r"^[*\-\u2022]\s+(.*)$", text)
+        number_match = re.match(r"^(\d+[.])\s+(.*)$", text)
+        if bullet_match:
+            prefix = f"{PDF_BULLET} "
+            text = bullet_match.group(1).strip()
+        elif number_match:
+            prefix = f"{number_match.group(1)} "
+            text = number_match.group(2).strip()
 
     return _pdf_draw_text_block(
-        doc,
-        page,
-        title,
-        text,
-        x,
-        y,
-        width,
-        page_width,
-        page_height,
-        margin,
-        fontsize=11,
-        color=PDF_BODY_COLOR,
-        prefix=prefix,
+        doc, page, title, text, x, y, width, page_width, page_height, margin,
+        page_number_ref, fontsize=11, color=PDF_BODY_COLOR, prefix=prefix,
     )
 
 
@@ -601,6 +631,17 @@ def validate_pdf_file(pdf_path: str) -> dict:
         return {"success": False, "error": f"The PDF could not be validated: {exc}"}
 
 
+# ── Design constants ──────────────────────────────────────────────────────────
+_PDF_MARGIN          = 60           # left / right margin (pt)
+_PDF_BODY_FONT       = 11.5         # body text size
+_PDF_HEADING_FONT    = 15           # section heading size
+_PDF_TITLE_FONT      = 30           # document title size
+_PDF_LINE_HEIGHT     = _PDF_BODY_FONT * 1.60
+_PDF_HEADING_SPACE   = 26          # gap before each section heading
+_PDF_PARA_GAP        = 10          # gap after each paragraph
+_PDF_FOOTER_RESERVE  = 52          # space reserved at bottom for footer
+
+
 def create_topic_pdf(topic: str, body: str) -> dict:
     fitz = _fitz()
     title = _pdf_normalize_text(topic) or "Generated Report"
@@ -608,80 +649,97 @@ def create_topic_pdf(topic: str, body: str) -> dict:
     output_path = PDF_OUTPUT_DIR / f"{safe_title}_{uuid.uuid4().hex[:8]}.pdf"
 
     doc = fitz.open()
-    margin = PDF_PAGE_MARGIN
-    page_width, page_height = fitz.paper_size("a4")
-    page = _pdf_new_page(doc, title, page_width, page_height, margin, first=True)
+    margin       = _PDF_MARGIN
+    page_w, page_h = fitz.paper_size("a4")
+    text_width   = page_w - 2 * margin
+    page_num_ref = [1]   # mutable so helpers can bump it
 
-    y = 62
-    for line in _pdf_wrap_inline_text(title, page_width - 2 * margin, 22) or [title]:
+    # ── First page ────────────────────────────────────────────────────────────
+    page = _pdf_new_page(doc, title, 1, page_w, page_h, margin, first=True)
+
+    # Title block top padding
+    y = 68
+
+    # Large bold document title
+    title_lines = _pdf_wrap_inline_text(title, text_width, _PDF_TITLE_FONT) or [title]
+    for line in title_lines:
         page.insert_text(
             fitz.Point(margin, y),
             line,
-            fontsize=22,
+            fontsize=_PDF_TITLE_FONT,
             fontname="Helvetica-Bold",
             color=PDF_TITLE_COLOR,
         )
-        y += 29
+        y += _PDF_TITLE_FONT * 1.30
 
+    # Accent rule — full-width, 2 pt, below title
+    rule_y = y + 4
     page.draw_line(
-        fitz.Point(margin, y - 9),
-        fitz.Point(page_width - margin, y - 9),
+        fitz.Point(margin, rule_y),
+        fitz.Point(page_w - margin, rule_y),
         color=PDF_ACCENT_COLOR,
-        width=1.2,
+        width=2.0,
     )
-    y += 20
+    # Subtle thin shadow line just below
+    page.draw_line(
+        fitz.Point(margin, rule_y + 3),
+        fitz.Point(page_w - margin, rule_y + 3),
+        color=(0.90, 0.90, 0.92),
+        width=0.5,
+    )
+    y = rule_y + 22
 
-    for block in _pdf_body_blocks(body):
+    # ── Body blocks ───────────────────────────────────────────────────────────
+    blocks = _pdf_body_blocks(body)
+    for i, block in enumerate(blocks):
         if block["type"] == "heading":
-            heading = block["text"]
-            fontsize = 14
-            line_height = fontsize * 1.45
-            lines = _pdf_wrap_inline_text(heading, page_width - 2 * margin, fontsize) or [heading]
-            page, y = _pdf_ensure_space(
-                doc,
-                page,
-                y + 6,
-                len(lines) * line_height + 8,
-                title,
-                page_width,
-                page_height,
-                margin,
-            )
-            for line in lines:
+            heading_text = block["text"]
+            heading_lines = _pdf_wrap_inline_text(heading_text, text_width, _PDF_HEADING_FONT) or [heading_text]
+            needed = _PDF_HEADING_SPACE + len(heading_lines) * (_PDF_HEADING_FONT * 1.40) + 6
+            # Push heading to next page if not enough room
+            if y + needed > page_h - _PDF_FOOTER_RESERVE - 40:
+                page_num_ref[0] += 1
+                page = _pdf_new_page(doc, title, page_num_ref[0], page_w, page_h, margin)
+                y = margin + 18
+            else:
+                y += _PDF_HEADING_SPACE
+
+            for idx, hline in enumerate(heading_lines):
                 page.insert_text(
                     fitz.Point(margin, y),
-                    line,
-                    fontsize=fontsize,
+                    hline,
+                    fontsize=_PDF_HEADING_FONT,
                     fontname="Helvetica-Bold",
                     color=PDF_TITLE_COLOR,
                 )
-                y += line_height
-            y += 4
-        else:
-            page, y = _pdf_draw_paragraph(
-                doc,
-                page,
-                title,
-                block["text"],
-                margin,
-                y,
-                page_width - 2 * margin,
-                page_width,
-                page_height,
-                margin,
+                y += _PDF_HEADING_FONT * 1.40
+
+            # Accent underline beneath heading text
+            page.draw_line(
+                fitz.Point(margin, y - 4),
+                fitz.Point(margin + 48, y - 4),
+                color=PDF_ACCENT_COLOR,
+                width=1.8,
             )
-            y += 8
+            y += 10
 
-    for page_number, rendered_page in enumerate(doc, start=1):
-        footer = f"Page {page_number} of {doc.page_count}"
-        rendered_page.insert_text(
-            fitz.Point(page_width - margin - 70, page_height - 32),
-            footer,
-            fontsize=9,
-            fontname="Helvetica",
-            color=PDF_MUTED_COLOR,
-        )
+        elif block["type"] == "bullet":
+            page, y = _pdf_draw_paragraph(
+                doc, page, title, block["text"],
+                margin + 8, y, text_width - 8,
+                page_w, page_h, margin, page_num_ref, is_bullet=True,
+            )
+            y += 5
 
+        else:  # paragraph
+            page, y = _pdf_draw_paragraph(
+                doc, page, title, block["text"],
+                margin, y, text_width,
+                page_w, page_h, margin, page_num_ref,
+            )
+            y += _PDF_PARA_GAP
+
+    # ── Save ──────────────────────────────────────────────────────────────────
     doc.set_metadata({
         "title": title,
         "author": "Virtual Assist",

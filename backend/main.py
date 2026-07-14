@@ -64,7 +64,10 @@ async def chat_voice(req: ChatRequest):
 
 
 @app.post("/chat-voice-input")
-async def chat_voice_input(file: UploadFile = File(...)):
+async def chat_voice_input(
+    file: UploadFile = File(...),
+    session_id: str = Form("default"),
+):
     audio_bytes = await file.read()
     async with httpx.AsyncClient(timeout=60.0) as client:
         res = await client.post(
@@ -76,7 +79,7 @@ async def chat_voice_input(file: UploadFile = File(...)):
     if not transcript:
         return {"reply": "I couldn't hear that clearly. Could you try again?", "audio": None}
 
-    reply = await generate_reply(transcript, "default")
+    reply = await generate_reply(transcript, session_id)
 
     audio_bytes_out = synthesize(reply)
     audio_b64 = base64.b64encode(audio_bytes_out).decode("utf-8")

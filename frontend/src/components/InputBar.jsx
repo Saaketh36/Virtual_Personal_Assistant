@@ -16,7 +16,7 @@ const T = {
   sendBg: 'linear-gradient(135deg,#c0152a,#7a0812)',
 };
 
-export default function InputBar({ onSend, onVoiceReply, loading }) {
+export default function InputBar({ onSend, onVoiceReply, loading, activeSession }) {
   const [text, setText] = useState('');
   const [recording, setRecording] = useState(false);
   const [processing, setProcessing] = useState(false);
@@ -27,8 +27,17 @@ export default function InputBar({ onSend, onVoiceReply, loading }) {
   const chunksRef = useRef([]);
   const recognitionRef = useRef(null);
 
+  // Persists accumulated final words across SpeechRecognition result events
+  const finalTranscriptRef = useRef('');
+  // Tracks whether the mic is still supposed to be on (for auto-restart)
+  const recordingActiveRef = useRef(false);
+  // Prevents runaway restart loops when recognition keeps failing
+  const recognitionRetriesRef = useRef(0);
+  const MAX_RECOGNITION_RETRIES = 3;
+
   useEffect(() => {
     return () => {
+      recordingActiveRef.current = false;
       if (recognitionRef.current) {
         recognitionRef.current.stop();
       }
@@ -65,11 +74,95 @@ export default function InputBar({ onSend, onVoiceReply, loading }) {
     e.target.value = '';
   };
 
+  // ── Speech Recognition helpers ──────────────────────────────────────────────
+
+  const startSpeechRecognition = () => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) return;
+
+    const recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = 'en-US';
+    recognition.maxAlternatives = 1;
+
+    // Reset retry count when recognition actually starts
+    recognition.onstart = () => {
+      recognitionRetriesRef.current = 0;
+    };
+
+    recognition.onresult = (event) => {
+      // Accumulate any newly finalized segments into the persistent ref
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        if (event.results[i].isFinal) {
+          finalTranscriptRef.current += event.results[i][0].transcript + ' ';
+        }
+      }
+
+      // Collect the current interim (non-final) segment
+      const lastResult = event.results[event.results.length - 1];
+      const interim = lastResult.isFinal ? '' : lastResult[0].transcript;
+
+      const display = finalTranscriptRef.current + interim;
+      setText(display);
+
+      if (ref.current) {
+        ref.current.style.height = 'auto';
+        ref.current.style.height = Math.min(ref.current.scrollHeight, 120) + 'px';
+      }
+    };
+
+    recognition.onerror = (event) => {
+      console.warn('Speech recognition error:', event.error);
+      // 'aborted' means recognition was killed — do NOT restart (avoids infinite loop)
+      // Only restart on genuinely transient network/silence errors, with a retry cap
+      const recoverable = ['no-speech', 'network'];
+      if (
+        recoverable.includes(event.error) &&
+        recordingActiveRef.current &&
+        recognitionRetriesRef.current < MAX_RECOGNITION_RETRIES
+      ) {
+        recognitionRetriesRef.current += 1;
+        setTimeout(() => {
+          if (recordingActiveRef.current) startSpeechRecognition();
+        }, 500);
+      }
+    };
+
+    // Chrome automatically stops recognition after a pause — always restart if still recording
+    recognition.onend = () => {
+      if (recordingActiveRef.current) {
+        setTimeout(() => {
+          if (recordingActiveRef.current) startSpeechRecognition();
+        }, 100);
+      }
+    };
+
+    recognitionRef.current = recognition;
+    try {
+      recognition.start();
+    } catch (e) {
+      console.warn('Could not start speech recognition:', e);
+    }
+  };
+
+  const stopSpeechRecognition = () => {
+    recordingActiveRef.current = false;
+    recognitionRetriesRef.current = MAX_RECOGNITION_RETRIES; // prevent any pending restart
+    if (recognitionRef.current) {
+      recognitionRef.current.onend = null; // prevent auto-restart on deliberate stop
+      recognitionRef.current.onerror = null;
+      recognitionRef.current.stop();
+      recognitionRef.current = null;
+    }
+  };
+
+  // ── Recording ───────────────────────────────────────────────────────────────
+
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
-      // Pick the best supported MIME type
       const mimeType = [
         'audio/webm;codecs=opus',
         'audio/webm',
@@ -92,44 +185,12 @@ export default function InputBar({ onSend, onVoiceReply, loading }) {
         await sendVoice(blob, mediaRecorder.mimeType);
       };
 
-      // Start Web Speech API for live transcription
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (SpeechRecognition) {
-        setText(''); // Clear input text for incoming transcription
-        const recognition = new SpeechRecognition();
-        recognition.continuous = true;
-        recognition.interimResults = true;
-        recognition.lang = 'en-US';
+      // Clear previous transcript and start live recognition
+      finalTranscriptRef.current = '';
+      setText('');
+      recordingActiveRef.current = true;
+      startSpeechRecognition();
 
-        recognition.onresult = (event) => {
-          let interimTranscript = '';
-          let finalTranscript = '';
-          for (let i = event.resultIndex; i < event.results.length; ++i) {
-            if (event.results[i].isFinal) {
-              finalTranscript += event.results[i][0].transcript;
-            } else {
-              interimTranscript += event.results[i][0].transcript;
-            }
-          }
-          const fullText = finalTranscript + interimTranscript;
-          setText(fullText);
-          
-          if (ref.current) {
-            ref.current.style.height = 'auto';
-            ref.current.style.height = Math.min(ref.current.scrollHeight, 120) + 'px';
-          }
-        };
-
-        recognition.onerror = (event) => {
-          console.error('Speech recognition error:', event.error);
-        };
-
-        recognitionRef.current = recognition;
-        recognition.start();
-      }
-
-      // ✅ timeslice=250ms — forces the encoder to flush audio data every 250ms
-      // Without this, Chrome/Edge only write the container header (~2300 bytes)
       mediaRecorder.start(250);
       setRecording(true);
     } catch (err) {
@@ -139,10 +200,7 @@ export default function InputBar({ onSend, onVoiceReply, loading }) {
   };
 
   const stopRecording = () => {
-    if (recognitionRef.current) {
-      recognitionRef.current.stop();
-      recognitionRef.current = null;
-    }
+    stopSpeechRecognition();
     if (mediaRecorderRef.current && recording) {
       mediaRecorderRef.current.stop();
       setRecording(false);
@@ -151,10 +209,10 @@ export default function InputBar({ onSend, onVoiceReply, loading }) {
   };
 
   const sendVoice = async (blob, mimeType) => {
-    // Pick correct file extension so the backend temp file is decoded properly
     const ext = (mimeType || 'audio/webm').includes('ogg') ? 'ogg' : 'webm';
     const formData = new FormData();
     formData.append('file', blob, `recording.${ext}`);
+    formData.append('session_id', activeSession || 'default');
 
     try {
       const res = await fetch('http://localhost:8000/chat-voice-input', {
@@ -180,7 +238,11 @@ export default function InputBar({ onSend, onVoiceReply, loading }) {
     }
   };
 
-  const micLabel = recording ? 'Recording... tap to stop' : processing ? 'Processing...' : 'ollama connected · llama 3.1 8b';
+  const micLabel = recording
+    ? 'Recording... tap to stop'
+    : processing
+    ? 'Processing...'
+    : 'ollama connected · llama 3.1 8b';
 
   return (
     <div style={{ padding: '12px 16px 16px', flexShrink: 0, borderTop: `1px solid ${T.border}`, background: T.bg }}>

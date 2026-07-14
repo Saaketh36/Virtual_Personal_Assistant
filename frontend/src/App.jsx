@@ -168,7 +168,7 @@ function App() {
         onUpdateUnread={setUnreadCount}
       />
       <Messages messages={messages} loading={loading} />
-      <InputBar onSend={sendMessage} onVoiceReply={handleVoiceReply} loading={loading} />
+      <InputBar onSend={sendMessage} onVoiceReply={handleVoiceReply} loading={loading} activeSession={activeSession} />
     </div>
   )
 }
