@@ -1,121 +1,358 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react'
 import {
   IconFileTypePdf,
   IconDownload,
-} from '@tabler/icons-react';
+  IconCopy,
+  IconCheck,
+  IconVolume,
+  IconWorldSearch,
+  IconSparkles,
+  IconMail,
+  IconSearch,
+  IconCode,
+  IconFileText,
+  IconChevronDown,
+  IconChevronRight,
+  IconSettings,
+  IconClock,
+  IconFolder,
+  IconTerminal2,
+} from '@tabler/icons-react'
 
-const T = {
-  text: '#fdebd0', text2: '#9a7e5a', text3: '#5a4830',
-  agentBg: '#131025', agentBorder: '#221d38',
-  userBg: '#1e1530', userBorder: '#2d2048', userText: '#f0d8a8',
-  toolBg: '#1a0508', toolBorder: '#3a0e18', toolText: '#c0152a',
-  audioBg: '#0d0b1a', audioBorder: '#201c32',
-  typingBg: '#131025', typingBorder: '#221d38',
-  hintText: '#5a4830', hintAccent: '#96101f',
-  nameText: '#3d3020', timeText: '#3d3020',
-  accent: '#c0152a', border2: '#312848',
-  sendBg: 'linear-gradient(135deg,#c0152a,#7a0812)',
-};
+function getTimeAwareGreeting() {
+  const hour = new Date().getHours()
+  if (hour < 12) return 'Good morning'
+  if (hour < 18) return 'Good afternoon'
+  return 'Good evening'
+}
 
-function formatContent(content) {
-  if (!content) return [];
-  const parts = [];
-  const regex = /```(\w*)\n([\s\S]*?)```/g;
-  let lastIndex = 0;
-  let match;
+const DASHBOARD_CARDS = [
+  {
+    icon: IconMail,
+    title: 'Gmail Inbox',
+    desc: 'Summarize unread & priority emails',
+    prompt: 'Check my Gmail inbox for unread messages and summarize key action items.',
+    accent: '#ec4899',
+    badge: '3 Unread',
+  },
+  {
+    icon: IconFileText,
+    title: 'Documents & RAG',
+    desc: 'Upload PDF and query insights',
+    prompt: 'Please summarize the attached PDF document and list key metrics.',
+    accent: '#8b5cf6',
+    badge: 'Chroma DB',
+  },
+  {
+    icon: IconWorldSearch,
+    title: 'Web Research',
+    desc: 'Live web search with DuckDuckGo',
+    prompt: 'Search the web for recent artificial intelligence news and summarize.',
+    accent: '#38bdf8',
+    badge: 'Live',
+  },
+  {
+    icon: IconCode,
+    title: 'Build & Code',
+    desc: 'Generate Python scripts & algorithms',
+    prompt: 'Write a clean Python script using asyncio to process JSON data.',
+    accent: '#10b981',
+    badge: 'Python 3.11',
+  },
+]
 
-  while ((match = regex.exec(content)) !== null) {
-    if (match.index > lastIndex) {
-      parts.push({
-        type: 'text',
-        value: content.substring(lastIndex, match.index)
-      });
-    }
-    parts.push({
-      type: 'code',
-      language: match[1] || 'code',
-      value: match[2]
-    });
-    lastIndex = regex.lastIndex;
-  }
+function HomeDashboard({ onSelectPrompt }) {
+  const greeting = getTimeAwareGreeting()
 
-  if (lastIndex < content.length) {
-    parts.push({
-      type: 'text',
-      value: content.substring(lastIndex)
-    });
-  }
+  const CAPSULES = [
+    {
+      icon: IconMail,
+      label: '@ Gmail',
+      subtext: 'Check inbox',
+      prompt: 'Check my Gmail inbox for unread messages and summarize key action items.',
+      color: '#f472b6',
+    },
+    {
+      icon: IconFileText,
+      label: '📄 Documents',
+      subtext: 'Summarize PDF',
+      prompt: 'Please summarize the attached PDF document and list key metrics.',
+      color: '#c084fc',
+    },
+    {
+      icon: IconWorldSearch,
+      label: '🌐 Web',
+      subtext: 'Search AI news',
+      prompt: 'Search the web for recent artificial intelligence news and summarize.',
+      color: '#38bdf8',
+    },
+    {
+      icon: IconCode,
+      label: '</> Python',
+      subtext: 'Write script',
+      prompt: 'Write a clean Python script using asyncio to process JSON data.',
+      color: '#34d399',
+    },
+  ]
 
-  return parts;
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '60px 20px 20px 20px',
+        maxWidth: '820px',
+        margin: '0 auto',
+        width: '100%',
+        textAlign: 'center',
+      }}
+    >
+      {/* Floating Centered Squircle N Logo Badge */}
+      <div
+        style={{
+          width: '54px',
+          height: '54px',
+          borderRadius: '18px',
+          background: 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: '#ffffff',
+          fontWeight: 800,
+          fontSize: '26px',
+          boxShadow: '0 12px 30px rgba(99, 102, 241, 0.45)',
+          marginBottom: '20px',
+          fontFamily: 'Outfit, sans-serif',
+        }}
+      >
+        N
+      </div>
+
+      {/* Time-Aware Sub-tag */}
+      <span
+        style={{
+          fontSize: '13px',
+          fontWeight: 600,
+          color: '#a855f7',
+          letterSpacing: '0.5px',
+          marginBottom: '8px',
+        }}
+      >
+        {greeting}, Saaketh 👋
+      </span>
+
+      {/* Main Hero Headline */}
+      <h1
+        style={{
+          fontSize: '38px',
+          fontWeight: 600,
+          letterSpacing: '-1.2px',
+          color: '#ffffff',
+          margin: '0 0 12px 0',
+          lineHeight: 1.15,
+        }}
+      >
+        What can we move forward today?
+      </h1>
+
+      {/* Subtitle */}
+      <p
+        style={{
+          fontSize: '15px',
+          color: '#94a3b8',
+          margin: '0 0 36px 0',
+          maxWidth: '540px',
+          lineHeight: 1.5,
+          fontWeight: 400,
+        }}
+      >
+        Think, search, and work across your tools from one calm, focused space.
+      </p>
+
+      {/* Horizontal Capsule Action Pills */}
+      <div
+        style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '12px',
+          width: '100%',
+          maxWidth: '720px',
+        }}
+      >
+        {CAPSULES.map((item, idx) => (
+          <button
+            key={idx}
+            onClick={() => onSelectPrompt && onSelectPrompt(item.prompt)}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '10px 18px',
+              borderRadius: '24px',
+              background: 'rgba(255, 255, 255, 0.04)',
+              backdropFilter: 'blur(20px)',
+              border: '1px solid rgba(255, 255, 255, 0.08)',
+              color: '#f8fafc',
+              fontSize: '13px',
+              fontWeight: 500,
+              cursor: 'pointer',
+              transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
+              boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
+            }}
+            onMouseEnter={e => {
+              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)'
+              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.18)'
+              e.currentTarget.style.transform = 'translateY(-2px)'
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.04)'
+              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.08)'
+              e.currentTarget.style.transform = 'translateY(0)'
+            }}
+          >
+            <span>{item.label}</span>
+            <span style={{ fontSize: '11.5px', color: '#64748b', fontWeight: 400 }}>· {item.subtext}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function ToolExecutionTimeline({ usedSearch, executionSteps = [] }) {
+  const [expanded, setExpanded] = useState(false)
+
+  const steps = executionSteps.length > 0 ? executionSteps : [
+    { label: 'Ingested context & system prompt', status: 'completed' },
+    ...(usedSearch ? [{ label: 'Performed web query via DuckDuckGo', status: 'completed' }] : []),
+    { label: 'Synthesized response via Llama 3.1 8B', status: 'completed' },
+  ]
+
+  return (
+    <div
+      style={{
+        margin: '8px 0 12px 0',
+        borderRadius: '10px',
+        background: 'rgba(255, 255, 255, 0.02)',
+        border: '1px solid rgba(255, 255, 255, 0.06)',
+        overflow: 'hidden',
+      }}
+    >
+      <button
+        onClick={() => setExpanded(!expanded)}
+        style={{
+          width: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          justify: 'space-between',
+          padding: '8px 12px',
+          background: 'none',
+          border: 'none',
+          cursor: 'pointer',
+          color: '#94a3b8',
+          fontSize: '11.5px',
+          fontWeight: 500,
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <IconSettings size={13} style={{ color: '#8b5cf6' }} />
+          <span>Used {steps.length} tool steps · 2.4s</span>
+        </div>
+        {expanded ? <IconChevronDown size={13} /> : <IconChevronRight size={13} />}
+      </button>
+
+      {expanded && (
+        <div style={{ padding: '8px 12px 12px 12px', borderTop: '1px solid rgba(255, 255, 255, 0.05)', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          {steps.map((step, i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '11.5px', color: '#cbd5e1' }}>
+              <IconCheck size={12} style={{ color: '#10b981' }} />
+              <span>{step.label}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
 }
 
 function CodeBlock({ language, code }) {
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState(false)
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(code);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
+    navigator.clipboard.writeText(code)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
 
   return (
-    <div style={{
-      background: '#07050d',
-      borderRadius: '8px',
-      border: '1px solid #201c32',
-      margin: '10px 0',
-      overflow: 'hidden',
-      fontFamily: 'SFMono-Regular, Consolas, Liberation Mono, monospace',
-      boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
-      width: '100%'
-    }}>
-      <div style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        padding: '8px 12px',
-        background: '#131025',
-        borderBottom: '1px solid #201c32',
-        color: '#9a7e5a',
-        textTransform: 'uppercase',
-        fontSize: '10px',
-        fontWeight: 600,
-        letterSpacing: '0.05em'
-      }}>
-        <span>{language}</span>
+    <div
+      style={{
+        background: '#090b14',
+        borderRadius: '10px',
+        border: '1px solid rgba(255, 255, 255, 0.08)',
+        margin: '12px 0',
+        overflow: 'hidden',
+        width: '100%',
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          justify: 'space-between',
+          alignItems: 'center',
+          padding: '7px 14px',
+          background: 'rgba(255, 255, 255, 0.03)',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+          color: '#94a3b8',
+          fontSize: '11px',
+          fontWeight: 600,
+          textTransform: 'uppercase',
+          letterSpacing: '0.5px',
+        }}
+      >
+        <span>{language || 'code'}</span>
         <button
           onClick={handleCopy}
           style={{
             background: 'transparent',
             border: 'none',
-            color: copied ? '#4ade80' : '#fdebd0',
+            color: copied ? '#10b981' : '#94a3b8',
             cursor: 'pointer',
             fontSize: '11px',
             display: 'flex',
             alignItems: 'center',
             gap: '4px',
-            opacity: 0.8,
-            transition: 'opacity 0.2s'
+            fontWeight: 500,
           }}
         >
-          {copied ? 'Copied!' : 'Copy'}
+          {copied ? <IconCheck size={13} /> : <IconCopy size={13} />}
+          <span>{copied ? 'Copied!' : 'Copy code'}</span>
         </button>
       </div>
-      <pre style={{
-        padding: '12px',
-        margin: 0,
-        overflowX: 'auto',
-        color: '#e5c7a3',
-        lineHeight: 1.5,
-        textAlign: 'left'
-      }}><code>{code}</code></pre>
+      <pre
+        style={{
+          padding: '14px',
+          margin: 0,
+          overflowX: 'auto',
+          color: '#e2e8f0',
+          fontSize: '12.5px',
+          lineHeight: 1.5,
+          fontFamily: "'JetBrains Mono', monospace",
+        }}
+      >
+        <code>{code}</code>
+      </pre>
     </div>
-  );
+  )
 }
 
 function PdfDownloadCard({ url }) {
-  const filename = decodeURIComponent(url.split('/').pop() || 'document.pdf');
-  const displayName = filename.length > 40 ? filename.slice(0, 37) + '...' : filename;
+  const filename = decodeURIComponent(url.split('/').pop() || 'document.pdf')
+  const displayName = filename.length > 40 ? filename.slice(0, 37) + '...' : filename
   return (
     <a
       href={url}
@@ -123,249 +360,255 @@ function PdfDownloadCard({ url }) {
       rel="noreferrer"
       download
       style={{
-        display: 'flex', alignItems: 'center', gap: '12px',
-        padding: '12px 16px', margin: '10px 0', borderRadius: '10px',
-        background: 'linear-gradient(135deg, rgba(192,21,42,0.08), rgba(19,16,37,0.6))',
-        border: '1px solid rgba(192,21,42,0.25)',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '12px',
+        padding: '12px 16px',
+        margin: '10px 0',
+        borderRadius: '12px',
+        background: 'rgba(139, 92, 246, 0.1)',
+        border: '1px solid rgba(139, 92, 246, 0.3)',
         textDecoration: 'none',
-        transition: 'all 0.25s cubic-bezier(0.4,0,0.2,1)',
-        cursor: 'pointer',
-        boxShadow: '0 2px 12px rgba(0,0,0,0.3)',
-      }}
-      onMouseEnter={e => {
-        e.currentTarget.style.borderColor = 'rgba(192,21,42,0.5)';
-        e.currentTarget.style.boxShadow = '0 4px 20px rgba(192,21,42,0.15)';
-        e.currentTarget.style.transform = 'translateY(-1px)';
-      }}
-      onMouseLeave={e => {
-        e.currentTarget.style.borderColor = 'rgba(192,21,42,0.25)';
-        e.currentTarget.style.boxShadow = '0 2px 12px rgba(0,0,0,0.3)';
-        e.currentTarget.style.transform = 'translateY(0)';
+        transition: 'all 0.18s ease',
       }}
     >
-      <div style={{
-        width: '38px', height: '38px', borderRadius: '8px',
-        background: 'linear-gradient(135deg, #c0152a, #7a0812)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        flexShrink: 0,
-        boxShadow: '0 2px 8px rgba(192,21,42,0.3)',
-      }}>
+      <div
+        style={{
+          width: '38px',
+          height: '38px',
+          borderRadius: '10px',
+          background: 'linear-gradient(135deg, #8b5cf6, #ec4899)',
+          display: 'flex',
+          alignItems: 'center',
+          justify: 'center',
+          flexShrink: 0,
+        }}
+      >
         <IconFileTypePdf size={20} style={{ color: '#fff' }} />
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: '13px', fontWeight: 500, color: '#fdebd0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <div style={{ fontSize: '13px', fontWeight: 600, color: '#f8fafc', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {displayName}
         </div>
-        <div style={{ fontSize: '11px', color: '#9a7e5a', marginTop: '2px' }}>PDF Document · Click to download</div>
+        <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '2px' }}>PDF Document · Click to download</div>
       </div>
-      <div style={{
-        width: '30px', height: '30px', borderRadius: '6px',
-        background: 'rgba(192,21,42,0.15)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        flexShrink: 0,
-      }}>
-        <IconDownload size={15} style={{ color: '#c0152a' }} />
-      </div>
+      <IconDownload size={18} style={{ color: '#c084fc' }} />
     </a>
-  );
+  )
 }
 
-function TextWithInlineCode({ text }) {
-  if (!text) return null;
-  const parts = text.split(/(`[^`]+`)/g);
+function FormattedMarkdown({ content }) {
+  if (!content) return null
+
+  const parts = []
+  const codeRegex = /```(\w*)\n([\s\S]*?)```/g
+  let lastIndex = 0
+  let match
+
+  while ((match = codeRegex.exec(content)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push({ type: 'text', value: content.substring(lastIndex, match.index) })
+    }
+    parts.push({ type: 'code', language: match[1], value: match[2] })
+    lastIndex = codeRegex.lastIndex
+  }
+
+  if (lastIndex < content.length) {
+    parts.push({ type: 'text', value: content.substring(lastIndex) })
+  }
+
   return (
-    <span>
-      {parts.map((part, index) => {
-        if (part.startsWith('`') && part.endsWith('`')) {
-          return (
-            <code
-              key={index}
-              style={{
-                background: '#201c32',
-                padding: '2px 5px',
-                borderRadius: '4px',
-                fontFamily: 'SFMono-Regular, Consolas, Liberation Mono, monospace',
-                fontSize: '12px',
-                color: '#c0152a',
-                border: '1px solid #2a2240',
-                margin: '0 2px'
-              }}
-            >
-              {part.slice(1, -1)}
-            </code>
-          );
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+      {parts.map((part, idx) => {
+        if (part.type === 'code') {
+          return <CodeBlock key={idx} language={part.language} code={part.value} />
         }
-        return part.split(/(https?:\/\/[^\s]+)/g).map((piece, pieceIndex) => {
-          if (piece.startsWith('http://') || piece.startsWith('https://')) {
-            if (piece.includes('/files/') && piece.toLowerCase().includes('.pdf')) {
-              return <PdfDownloadCard key={`${index}-${pieceIndex}`} url={piece} />;
-            }
-            return (
-              <a
-                key={`${index}-${pieceIndex}`}
-                href={piece}
-                target="_blank"
-                rel="noreferrer"
-                style={{ color: '#f0b35c', textDecoration: 'underline' }}
-              >
-                {piece}
-              </a>
-            );
-          }
-          return piece;
-        });
+
+        const lines = part.value.split('\n')
+        return (
+          <div key={idx} style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            {lines.map((line, lineIdx) => {
+              if (line.includes('http://') || line.includes('https://')) {
+                if (line.includes('/files/') && line.toLowerCase().includes('.pdf')) {
+                  const urlMatch = line.match(/(https?:\/\/[^\s]+)/)
+                  if (urlMatch) return <PdfDownloadCard key={lineIdx} url={urlMatch[0]} />
+                }
+              }
+
+              const boldSegments = line.split(/(\*\*[^*]+\*\*)/g)
+              return (
+                <p key={lineIdx} style={{ margin: 0, minHeight: line.trim() ? 'auto' : '6px' }}>
+                  {boldSegments.map((seg, segIdx) => {
+                    if (seg.startsWith('**') && seg.endsWith('**')) {
+                      return <strong key={segIdx} style={{ fontWeight: 600, color: '#f8fafc' }}>{seg.slice(2, -2)}</strong>
+                    }
+                    return seg
+                  })}
+                </p>
+              )
+            })}
+          </div>
+        )
       })}
-    </span>
-  );
+    </div>
+  )
 }
 
 function TypingIndicator() {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', maxWidth: '75%', alignSelf: 'flex-start', alignItems: 'flex-start' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-        <span style={{ fontSize: '11px', fontWeight: 500, letterSpacing: '0.05em', color: T.nameText }}>ASSISTANT</span>
-      </div>
-      <div className="msg-bubble-agent" style={{
-        display: 'flex', alignItems: 'center', gap: '5px',
-        padding: '9px 13px', borderRadius: '2px 12px 12px 12px', width: 'fit-content',
-      }}>
-        {[0, 0.2, 0.4].map((delay, i) => (
-          <div key={i} style={{
-            width: '5px', height: '5px', borderRadius: '50%', background: T.text3,
-            animation: 'pulse 0.9s infinite', animationDelay: `${delay}s`,
-          }} />
-        ))}
-      </div>
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px',
+        padding: '12px 16px',
+        maxWidth: '840px',
+        margin: '0 auto',
+        width: '100%',
+      }}
+    >
+      <div
+        style={{
+          width: '8px',
+          height: '8px',
+          borderRadius: '50%',
+          background: '#c084fc',
+          animation: 'spin 1s linear infinite',
+        }}
+      />
+      <span style={{ fontSize: '13px', color: '#94a3b8', fontWeight: 500 }}>Nexus is processing query...</span>
     </div>
-  );
-}
-
-function WaveformBars() {
-  const heights = [4,7,12,18,14,9,20,16,8,13,22,10,6,15,11,19,7,14,9,17,12,8,20,6,13,16,10,18,5,11];
-  return (
-    <div style={{ flex: 1, height: '22px', display: 'flex', alignItems: 'center', gap: '2px' }}>
-      {heights.map((h, i) => (
-        <div key={i} style={{
-          width: '3px', height: `${h}px`, borderRadius: '2px',
-          background: i < 10 ? T.accent : T.border2,
-        }} />
-      ))}
-    </div>
-  );
+  )
 }
 
 function Message({ msg }) {
-  const isUser = msg.role === 'user';
-  const now = msg.time || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const isUser = msg.role === 'user'
+  const [speaking, setSpeaking] = useState(false)
+
+  const handleSpeak = () => {
+    if (!('speechSynthesis' in window)) return
+    if (speaking) {
+      window.speechSynthesis.cancel()
+      setSpeaking(false)
+      return
+    }
+    const utterance = new SpeechSynthesisUtterance(msg.content.replace(/```[\s\S]*?```/g, 'Code snippet omitted.'))
+    utterance.onend = () => setSpeaking(false)
+    utterance.onerror = () => setSpeaking(false)
+    setSpeaking(true)
+    window.speechSynthesis.speak(utterance)
+  }
 
   return (
-    <div style={{
-      display: 'flex', flexDirection: 'column', gap: '5px',
-      maxWidth: '75%', alignSelf: isUser ? 'flex-end' : 'flex-start',
-      alignItems: isUser ? 'flex-end' : 'flex-start',
-      animation: 'slideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards',
-    }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-        {isUser ? (
-          <>
-            <span style={{ fontSize: '11px', color: T.timeText }}>{now}</span>
-            <span style={{ fontSize: '11px', fontWeight: 500, letterSpacing: '0.05em', color: T.nameText }}>YOU</span>
-          </>
-        ) : (
-          <>
-            <span style={{ fontSize: '11px', fontWeight: 500, letterSpacing: '0.05em', color: T.nameText }}>ASSISTANT</span>
-            <span style={{ fontSize: '11px', color: T.timeText }}>{now}</span>
-          </>
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '6px',
+        maxWidth: '840px',
+        width: '100%',
+        margin: '0 auto',
+        padding: '4px 0',
+      }}
+    >
+      {/* Header */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justify: 'space-between',
+          fontSize: '11px',
+          color: '#64748b',
+          fontWeight: 500,
+          padding: '0 2px',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span
+            style={{
+              fontWeight: 700,
+              color: isUser ? '#f472b6' : '#c084fc',
+              textTransform: 'uppercase',
+              letterSpacing: '0.5px',
+            }}
+          >
+            {isUser ? 'You' : 'Nexus Assistant'}
+          </span>
+          <span>{msg.time}</span>
+        </div>
+
+        {!isUser && (
+          <button
+            onClick={handleSpeak}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: speaking ? '#ec4899' : '#64748b',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              fontSize: '11px',
+              fontWeight: 500,
+            }}
+            title="Read Aloud"
+          >
+            <IconVolume size={14} />
+            <span>{speaking ? 'Stop' : 'Listen'}</span>
+          </button>
         )}
       </div>
 
-      {msg.usedSearch && (
-        <div style={{
-          display: 'inline-flex', alignItems: 'center', gap: '5px',
-          fontSize: '11px', padding: '3px 9px', borderRadius: '20px',
-          border: `1px solid ${T.toolBorder}`, background: T.toolBg, color: T.toolText,
-          marginBottom: '4px',
-        }}>
-          <i className="ti ti-world-search" style={{ fontSize: '11px' }} aria-hidden="true" />
-          searched the web
-        </div>
-      )}
+      {/* Tool step timeline for assistant messages */}
+      {!isUser && <ToolExecutionTimeline usedSearch={msg.usedSearch} />}
 
+      {/* Message Content Card */}
       <div
-        className={isUser ? 'msg-bubble-user' : 'msg-bubble-agent'}
         style={{
-          padding: '10px 14px', fontSize: '13px', lineHeight: 1.65,
-          color: isUser ? T.userText : T.text,
-          borderRadius: isUser ? '12px 2px 12px 12px' : '2px 12px 12px 12px',
-          width: '100%',
-          boxSizing: 'border-box',
-          whiteSpace: 'pre-wrap',
+          borderRadius: '14px',
+          padding: '16px 18px',
+          fontSize: '13.5px',
+          lineHeight: 1.65,
+          color: '#f8fafc',
+          background: isUser ? '#181b2a' : '#10121c',
+          border: isUser ? '1px solid rgba(244, 114, 182, 0.2)' : '1px solid rgba(255, 255, 255, 0.07)',
         }}
       >
-        {(() => {
-          const parts = formatContent(msg.content);
-          if (parts.length === 0) return <TextWithInlineCode text={msg.content} />;
-          return parts.map((part, index) => {
-            if (part.type === 'code') {
-              return <CodeBlock key={index} language={part.language} code={part.value} />;
-            }
-            return <TextWithInlineCode key={index} text={part.value} />;
-          });
-        })()}
+        <FormattedMarkdown content={msg.content} />
       </div>
-
-      {msg.audio && (
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: '8px',
-          marginTop: '7px', padding: '7px 11px', borderRadius: '8px',
-          border: `1px solid ${T.audioBorder}`, background: T.audioBg,
-        }}>
-          <button style={{
-            width: '24px', height: '24px', borderRadius: '50%', border: 'none',
-            background: T.sendBg, cursor: 'pointer',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-          }}>
-            <i className="ti ti-player-play" style={{ fontSize: '11px', color: '#fff' }} aria-hidden="true" />
-          </button>
-          <WaveformBars />
-          <span style={{ fontSize: '11px', color: T.hintText }}>0:05</span>
-        </div>
-      )}
-
-      {!isUser && msg.model && (
-        <div style={{ fontSize: '11px', marginTop: '3px', color: T.hintText }}>
-          via <span style={{ color: T.hintAccent }}>{msg.model}</span>
-          {msg.usedSearch && ' · web search active'}
-        </div>
-      )}
     </div>
-  );
+  )
 }
 
-export default function Messages({ messages, loading }) {
-  const bottomRef = useRef(null);
+export default function Messages({ messages, loading, onSelectPrompt }) {
+  const bottomRef = useRef(null)
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, loading]);
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages, loading])
+
+  const showWelcome = !messages.some(m => m.role === 'user')
 
   return (
-    <>
-      <style>{`
-        @keyframes pulse { 0%,60%,100%{opacity:.3} 30%{opacity:1} }
-        @keyframes slideIn {
-          from { opacity: 0; transform: translateY(8px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-      `}</style>
-      <div className="msg-area" style={{
-        flex: 1, overflowY: 'auto', padding: '20px',
-        display: 'flex', flexDirection: 'column', gap: '18px', scrollbarWidth: 'thin',
-      }}>
-        {messages.map(msg => <Message key={msg.id} msg={msg} />)}
-        {loading && <TypingIndicator />}
-        <div ref={bottomRef} />
-      </div>
-    </>
-  );
+    <div
+      style={{
+        flex: 1,
+        overflowY: 'auto',
+        padding: '20px 24px 16px 24px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '18px',
+      }}
+    >
+      {showWelcome ? (
+        <HomeDashboard onSelectPrompt={onSelectPrompt} />
+      ) : (
+        messages.map(msg => <Message key={msg.id} msg={msg} />)
+      )}
+      {loading && <TypingIndicator />}
+      <div ref={bottomRef} />
+    </div>
+  )
 }
+
+

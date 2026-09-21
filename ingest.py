@@ -1,6 +1,12 @@
 import asyncio
+import os
+import sys
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.join(BASE_DIR, "backend"))
+
 import psycopg
-from backend.embedding import embed
+from embedding import embed
 
 DB_CONFIG = {
     "host": "localhost",
@@ -16,27 +22,29 @@ DOCS = [
     "Ollama runs large language models locally."
 ]
 
+
 async def main():
     conn = psycopg.connect(**DB_CONFIG)
     cur = conn.cursor()
 
     for doc in DOCS:
         vector = await embed(doc)
-
         vector_str = "[" + ",".join(map(str, vector)) + "]"
 
         cur.execute(
             """
-            INSERT INTO documents
-            (content, source, embedding)
-            VALUES (%s, %s, %s::vector)
+            INSERT INTO conversations
+            (session_id, role, content, source, memory_type, embedding)
+            VALUES (%s, %s, %s, %s, %s, %s::vector)
             """,
-            (doc, "test", vector_str)
+            ("__global__", "document", doc, "test_ingest", "document", vector_str)
         )
 
     conn.commit()
     conn.close()
 
-    print("Documents inserted")
+    print("Documents inserted successfully into conversations table.")
 
-asyncio.run(main())
+
+if __name__ == "__main__":
+    asyncio.run(main())

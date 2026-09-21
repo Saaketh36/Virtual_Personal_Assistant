@@ -1,28 +1,92 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Topbar from './components/Topbar'
-import SessionDrawer from './components/SessionDrawer'
+import Sidebar from './components/Sidebar'
 import EmailPanel from './components/EmailPanel'
 import Messages from './components/Messages'
 import InputBar from './components/InputBar'
+import CommandPalette from './components/CommandPalette'
+import VoiceModal from './components/VoiceModal'
 
 function App() {
-  const [drawerOpen, setDrawerOpen] = useState(false)
+  const [sidebarOpen, setSidebarOpen] = useState(true)
   const [emailPanelOpen, setEmailPanelOpen] = useState(false)
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
+  const [voiceModalOpen, setVoiceModalOpen] = useState(false)
+
   const [unreadCount, setUnreadCount] = useState(0)
   const [sessions, setSessions] = useState([
-    { id: 'default', name: "Today's session" }
+    { id: 'default', name: 'General Research' }
   ])
   const [activeSession, setActiveSession] = useState('default')
   const [messages, setMessages] = useState([
     {
       id: 1,
       role: 'agent',
-      content: "Hey Saaketh — I'm online and ready. Ask me anything, or tap the mic to speak.",
+      content: "Welcome to **Nexus Studio** — your intelligent AI workspace.",
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       model: 'llama 3.1 8b',
     }
   ])
   const [loading, setLoading] = useState(false)
+
+  const activeSessionItem = sessions.find(s => s.id === activeSession)
+
+  // Global Keyboard Shortcuts (Cmd/Ctrl + K, Cmd/Ctrl + B)
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      const isCmdOrCtrl = e.metaKey || e.ctrlKey
+      if (isCmdOrCtrl && (e.code === 'KeyK' || e.key.toLowerCase() === 'k')) {
+        e.preventDefault()
+        e.stopPropagation()
+        setCommandPaletteOpen(prev => !prev)
+      }
+      if (isCmdOrCtrl && (e.code === 'KeyB' || e.key.toLowerCase() === 'b')) {
+        e.preventDefault()
+        e.stopPropagation()
+        setSidebarOpen(prev => !prev)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown, true)
+    return () => window.removeEventListener('keydown', handleKeyDown, true)
+  }, [])
+
+  const handleNewSession = () => {
+    const newId = `session_${Date.now()}`
+    const newSession = { id: newId, name: `Conversation ${sessions.length + 1}` }
+    setSessions(prev => [newSession, ...prev])
+    setActiveSession(newId)
+    setMessages([
+      {
+        id: Date.now(),
+        role: 'agent',
+        content: "New workspace session created. How can I help you?",
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        model: 'llama 3.1 8b',
+      }
+    ])
+  }
+
+  const exportChat = () => {
+    if (!messages.length) return
+    const activeName = activeSessionItem?.name || 'chat'
+    let content = `# Conversation Log: ${activeName}\n`
+    content += `*Exported on ${new Date().toLocaleString()}*\n\n---\n\n`
+    
+    messages.forEach(msg => {
+      const sender = msg.role === 'user' ? 'User' : 'Assistant'
+      content += `### **${sender}** (${msg.time})\n\n${msg.content}\n\n`
+    })
+
+    const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${activeName.toLowerCase().replace(/\s+/g, '_')}_export.md`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+  }
 
   const sendMessage = async (text, attachment = null) => {
     if ((!text.trim() && !attachment) || loading) return
@@ -126,49 +190,100 @@ function App() {
 
   const deleteSession = (id) => {
     setSessions(prev => {
-      const filtered = prev.filter(s => s.id !== id);
+      const filtered = prev.filter(s => s.id !== id)
       if (filtered.length === 0) {
-        const newId = `session_${Date.now()}`;
-        setActiveSession(newId);
-        return [{ id: newId, name: 'New conversation' }];
+        const newId = `session_${Date.now()}`
+        setActiveSession(newId)
+        return [{ id: newId, name: 'New conversation' }]
       }
       if (activeSession === id) {
-        setActiveSession(filtered[0].id);
+        setActiveSession(filtered[0].id)
       }
-      return filtered;
-    });
-  };
+      return filtered
+    })
+  }
 
   const renameSession = (id, newName) => {
-    setSessions(prev => prev.map(s => s.id === id ? { ...s, name: newName } : s));
-  };
+    setSessions(prev => prev.map(s => s.id === id ? { ...s, name: newName } : s))
+  }
 
   return (
-    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: '#0a0812', fontFamily: 'inherit', width: '100%', position: 'relative', overflow: 'hidden' }}>
-      <Topbar
-        drawerOpen={drawerOpen}
-        setDrawerOpen={setDrawerOpen}
-        emailPanelOpen={emailPanelOpen}
-        setEmailPanelOpen={setEmailPanelOpen}
-        unreadCount={unreadCount}
-      />
-      <SessionDrawer
-        open={drawerOpen}
-        setOpen={setDrawerOpen}
+    <div style={{ height: '100vh', display: 'flex', background: '#06070b', fontFamily: 'inherit', width: '100%', position: 'relative', overflow: 'hidden' }}>
+      {/* Background Mesh Orbs */}
+      <div className="bg-mesh-container">
+        <div className="mesh-orb mesh-orb-1" />
+        <div className="mesh-orb mesh-orb-2" />
+        <div className="mesh-orb mesh-orb-3" />
+      </div>
+
+      {/* Persistent Left Workspace Sidebar */}
+      <Sidebar
+        open={sidebarOpen}
+        setOpen={setSidebarOpen}
         sessions={sessions}
-        setSessions={setSessions}
         activeSession={activeSession}
         setActiveSession={setActiveSession}
         onDeleteSession={deleteSession}
         onRenameSession={renameSession}
+        onNewSession={handleNewSession}
+        onOpenGmail={() => setEmailPanelOpen(true)}
+        onOpenVoiceModal={() => setVoiceModalOpen(true)}
+        onOpenCommandPalette={() => setCommandPaletteOpen(true)}
+        unreadCount={unreadCount}
       />
-      <EmailPanel
-        open={emailPanelOpen}
-        setOpen={setEmailPanelOpen}
-        onUpdateUnread={setUnreadCount}
+
+      {/* Main AI Workspace Content Area */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden', position: 'relative' }}>
+        <Topbar
+          sidebarOpen={sidebarOpen}
+          setSidebarOpen={setSidebarOpen}
+          emailPanelOpen={emailPanelOpen}
+          setEmailPanelOpen={setEmailPanelOpen}
+          unreadCount={unreadCount}
+          activeSessionName={activeSessionItem?.name || 'General Assistant'}
+          onExportChat={exportChat}
+          onOpenCommandPalette={() => setCommandPaletteOpen(true)}
+        />
+        
+        <EmailPanel
+          open={emailPanelOpen}
+          setOpen={setEmailPanelOpen}
+          onUpdateUnread={setUnreadCount}
+        />
+        
+        <Messages
+          messages={messages}
+          loading={loading}
+          onSelectPrompt={(prompt) => sendMessage(prompt)}
+        />
+        
+        <InputBar
+          onSend={sendMessage}
+          onVoiceReply={handleVoiceReply}
+          loading={loading}
+          activeSession={activeSession}
+          onOpenVoiceModal={() => setVoiceModalOpen(true)}
+        />
+      </div>
+
+      {/* Spotlight Command Palette Modal */}
+      <CommandPalette
+        isOpen={commandPaletteOpen}
+        onClose={() => setCommandPaletteOpen(false)}
+        onNewChat={handleNewSession}
+        onOpenGmail={() => setEmailPanelOpen(true)}
+        onOpenVoice={() => setVoiceModalOpen(true)}
+        onExport={exportChat}
+        onClear={() => setMessages([])}
       />
-      <Messages messages={messages} loading={loading} />
-      <InputBar onSend={sendMessage} onVoiceReply={handleVoiceReply} loading={loading} activeSession={activeSession} />
+
+      {/* Immersive Voice Mode Modal */}
+      <VoiceModal
+        isOpen={voiceModalOpen}
+        onClose={() => setVoiceModalOpen(false)}
+        onVoiceReply={handleVoiceReply}
+        activeSession={activeSession}
+      />
     </div>
   )
 }

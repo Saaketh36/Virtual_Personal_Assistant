@@ -1,15 +1,15 @@
 import { useState, useEffect, useCallback } from 'react'
 
 const THEME = {
-  bg: '#0a0812',
-  border: '#251f3a',
-  text: '#fdebd0',
-  text2: '#9a7e5a',
-  bg3: '#171528',
-  accent: '#c0152a',
-  accentGlow: '#c0152a55',
-  cardBg: 'rgba(255, 255, 255, 0.02)',
-  inputBg: '#131025',
+  bg: '#10121c',
+  border: 'rgba(255, 255, 255, 0.08)',
+  text: '#f8fafc',
+  text2: '#94a3b8',
+  bg3: '#181b2a',
+  accent: '#ec4899',
+  accentGlow: 'rgba(236, 72, 153, 0.3)',
+  cardBg: 'rgba(255, 255, 255, 0.03)',
+  inputBg: 'rgba(255, 255, 255, 0.05)',
 }
 
 const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms))

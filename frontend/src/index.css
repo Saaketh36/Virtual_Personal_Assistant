@@ -9,60 +9,172 @@
 }
 
 body {
-  background: radial-gradient(circle at 50% 50%, #150f2b 0%, #0a0812 100%);
+  background-color: #080911;
   min-height: 100vh;
-  font-family: 'Outfit', 'Inter', system-ui, sans-serif;
-  color: #fdebd0;
+  font-family: 'Plus Jakarta Sans', 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+  color: #f8fafc;
+  overflow: hidden;
+  position: relative;
+  -webkit-font-smoothing: antialiased;
 }
 
-::-webkit-scrollbar { width: 6px; }
-::-webkit-scrollbar-track { background: rgba(0, 0, 0, 0.1); }
-::-webkit-scrollbar-thumb { background: rgba(192, 21, 42, 0.3); border-radius: 4px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(192, 21, 42, 0.6); }
+/* Aura Glass Glowing Ambient Background Mesh */
+.bg-mesh-container {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
 
-textarea { resize: none; }
+.mesh-orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(140px);
+  opacity: 0.22;
+  animation: floatOrb 24s ease-in-out infinite alternate;
+}
+
+.mesh-orb-1 {
+  width: 650px;
+  height: 650px;
+  top: -220px;
+  left: -220px;
+  background: radial-gradient(circle, #6366f1 0%, rgba(99, 102, 241, 0) 70%);
+}
+
+.mesh-orb-2 {
+  width: 750px;
+  height: 750px;
+  bottom: -280px;
+  right: -280px;
+  background: radial-gradient(circle, #a855f7 0%, rgba(168, 85, 247, 0) 70%);
+  animation-delay: -9s;
+}
+
+.mesh-orb-3 {
+  width: 550px;
+  height: 550px;
+  top: 25%;
+  left: 42%;
+  background: radial-gradient(circle, #38bdf8 0%, rgba(56, 189, 248, 0) 70%);
+  animation-delay: -16s;
+}
+
+@keyframes floatOrb {
+  0% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(45px, 35px) scale(1.07); }
+  100% { transform: translate(-35px, 55px) scale(0.94); }
+}
+
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+textarea {
+  resize: none;
+}
+
+/* Nexus Aura Glass Material System */
+.glass-aura {
+  background: rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(32px) saturate(190%);
+  -webkit-backdrop-filter: blur(32px) saturate(190%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  border-radius: 24px;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.aura-capsule-pill {
+  background: rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(28px) saturate(180%);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-top: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.aura-capsule-pill:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.2);
+  border-top-color: rgba(255, 255, 255, 0.3);
+  transform: translateY(-2px);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.22);
+}
 
 .msg-bubble-agent {
-  background: rgba(19, 16, 37, 0.6) !important;
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(42, 34, 64, 0.4) !important;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.msg-bubble-agent:hover {
-  border-color: rgba(192, 21, 42, 0.3) !important;
-  box-shadow: 0 4px 24px rgba(192, 21, 42, 0.08);
+  background: rgba(255, 255, 255, 0.04) !important;
+  backdrop-filter: blur(28px) saturate(180%);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-top: 1px solid rgba(255, 255, 255, 0.16) !important;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  border-radius: 20px !important;
 }
 
 .msg-bubble-user {
-  background: rgba(30, 21, 48, 0.6) !important;
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(74, 53, 110, 0.4) !important;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  background: rgba(99, 102, 241, 0.15) !important;
+  backdrop-filter: blur(28px) saturate(180%);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  border: 1px solid rgba(99, 102, 241, 0.3) !important;
+  border-top: 1px solid rgba(99, 102, 241, 0.4) !important;
+  box-shadow: 0 10px 30px rgba(99, 102, 241, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  border-radius: 20px !important;
 }
 
-.msg-bubble-user:hover {
-  border-color: rgba(192, 21, 42, 0.4) !important;
-  box-shadow: 0 4px 24px rgba(192, 21, 42, 0.1);
+/* Voice Mic Radar Pulse Animation */
+@keyframes micRadar {
+  0% {
+    box-shadow: 0 0 0 0 rgba(168, 85, 247, 0.6);
+  }
+  70% {
+    box-shadow: 0 0 0 14px rgba(168, 85, 247, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(168, 85, 247, 0);
+  }
 }
 
-.msg-input-wrap {
-  background: rgba(19, 16, 37, 0.7) !important;
-  backdrop-filter: blur(16px);
-  border: 1px solid rgba(42, 34, 64, 0.6) !important;
-  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.02);
-  transition: border-color 0.3s, box-shadow 0.3s;
+.mic-active-pulse {
+  animation: micRadar 1.4s infinite;
 }
 
-.msg-input-wrap:focus-within {
-  border-color: rgba(192, 21, 42, 0.7) !important;
-  box-shadow: 0 0 20px rgba(192, 21, 42, 0.2), 0 4px 30px rgba(0, 0, 0, 0.3);
+/* Voice Orb Pulsating Sphere */
+@keyframes voiceOrbPulse {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 40px rgba(99, 102, 241, 0.5), 0 0 80px rgba(168, 85, 247, 0.3);
+  }
+  50% {
+    transform: scale(1.12);
+    box-shadow: 0 0 60px rgba(99, 102, 241, 0.8), 0 0 110px rgba(168, 85, 247, 0.6);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 40px rgba(99, 102, 241, 0.5), 0 0 80px rgba(168, 85, 247, 0.3);
+  }
 }
 
-.msg-area {
-  background: transparent !important;
+.voice-orb-glow {
+  animation: voiceOrbPulse 2.2s ease-in-out infinite;
 }
 
 @keyframes spin {
@@ -73,3 +185,8 @@ textarea { resize: none; }
 .animate-spin {
   animation: spin 1s linear infinite;
 }
+
+
+
+
+

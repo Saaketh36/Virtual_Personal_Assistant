@@ -6,6 +6,7 @@ from agent import generate_reply, needs_search
 from tts import synthesize
 from email_routes import router as email_router
 from tools.pdf_tool import PDF_OUTPUT_DIR, save_uploaded_pdf
+from memory import list_sessions, get_session_messages, delete_session
 import base64
 import httpx
 
@@ -31,6 +32,42 @@ def root():
     return {"status": "VPA backend running"}
 
 
+@app.get("/sessions")
+async def sessions_list():
+    """Return all distinct sessions from the database."""
+    try:
+        sessions = await list_sessions()
+        return {"sessions": sessions}
+    except Exception:
+        return {"sessions": []}
+
+
+@app.get("/sessions/{session_id}/messages")
+async def session_messages(session_id: str):
+    """Return the ordered chat history for a session."""
+    try:
+        messages = await get_session_messages(session_id)
+        return {"messages": messages}
+    except Exception:
+        return {"messages": []}
+
+
+@app.delete("/sessions/{session_id}")
+async def session_delete(session_id: str):
+    """Delete all data for a session."""
+    try:
+        ok = await delete_session(session_id)
+        try:
+            from agent import SESSION_PDFS, PENDING_EMAILS
+            SESSION_PDFS.pop(session_id, None)
+            PENDING_EMAILS.pop(session_id, None)
+        except Exception as e:
+            print(f"Failed to clear in-memory state: {e}")
+        return {"success": ok}
+    except Exception:
+        return {"success": False}
+
+
 @app.post("/chat")
 async def chat(req: ChatRequest):
     try:
@@ -53,8 +90,13 @@ async def chat(req: ChatRequest):
 @app.post("/chat-voice")
 async def chat_voice(req: ChatRequest):
     reply = await generate_reply(req.message, req.session_id)
-    audio_bytes = synthesize(reply)
-    audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
+    audio_b64 = None
+    try:
+        audio_bytes = synthesize(reply)
+        audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
+    except Exception as exc:
+        print(f"[TTS error in chat-voice] {exc}")
+
     return {
         "reply": reply,
         "audio": audio_b64,
@@ -69,20 +111,36 @@ async def chat_voice_input(
     session_id: str = Form("default"),
 ):
     audio_bytes = await file.read()
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        res = await client.post(
-            "http://localhost:8001/transcribe",
-            files={"audio": (file.filename, audio_bytes, file.content_type)},
-        )
-    transcript = res.json().get("transcript", "").strip()
+    transcript = ""
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            res = await client.post(
+                "http://localhost:8001/transcribe",
+                files={"audio": (file.filename, audio_bytes, file.content_type)},
+            )
+        if res.status_code == 200:
+            transcript = res.json().get("transcript", "").strip()
+    except Exception as exc:
+        print(f"[Whisper connection error in chat-voice-input] {exc}")
+        return {
+            "transcript": "",
+            "reply": "I couldn't reach the Whisper transcription service. Please check if it is running on port 8001.",
+            "audio": None,
+            "used_search": False,
+            "model": "Groq",
+        }
 
     if not transcript:
-        return {"reply": "I couldn't hear that clearly. Could you try again?", "audio": None}
+        return {"transcript": "", "reply": "I couldn't hear that clearly. Could you try again?", "audio": None}
 
     reply = await generate_reply(transcript, session_id)
 
-    audio_bytes_out = synthesize(reply)
-    audio_b64 = base64.b64encode(audio_bytes_out).decode("utf-8")
+    audio_b64 = None
+    try:
+        audio_bytes_out = synthesize(reply)
+        audio_b64 = base64.b64encode(audio_bytes_out).decode("utf-8")
+    except Exception as exc:
+        print(f"[TTS error in chat-voice-input] {exc}")
 
     return {
         "transcript": transcript,
@@ -134,3 +192,4 @@ async def chat_pdf(
             "used_search": False,
             "model": "Groq",
         }
+

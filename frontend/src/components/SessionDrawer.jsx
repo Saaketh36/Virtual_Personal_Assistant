@@ -16,7 +16,7 @@ export default function SessionDrawer({
 
   const newSession = () => {
     const id = `session_${Date.now()}`
-    setSessions(prev => [...prev, { id, name: 'New conversation' }])
+    setSessions(prev => [...prev, { id, name: `Chat ${sessions.length + 1}` }])
     setActiveSession(id)
     setOpen(false)
   }
@@ -48,113 +48,126 @@ export default function SessionDrawer({
   }
 
   return (
-    <div style={{
-      position: 'absolute', top: '50px', left: 0, right: 0, bottom: 0,
-      zIndex: 20,
-      background: '#0a0812e6',
-      backdropFilter: 'blur(10px)',
-      borderTop: '1px solid #251f3a',
-      transform: open ? 'translateY(0)' : 'translateY(calc(-100% - 50px))',
-      transition: 'transform 0.25s cubic-bezier(0.4,0,0.2,1)',
+    <div className="glass-panel" style={{
+      position: 'absolute', top: '54px', left: 0, right: 0, bottom: 0,
+      zIndex: 25,
+      background: 'rgba(7, 9, 19, 0.92)',
+      backdropFilter: 'blur(20px)',
+      borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+      transform: open ? 'translateY(0)' : 'translateY(calc(-100% - 54px))',
+      transition: 'transform 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
     }}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '16px', height: '100%', overflowY: 'auto' }}>
-        <p style={{ color: '#9a7e5a', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '4px', opacity: 0.7 }}>
-          conversations
-        </p>
-
-        {sessions.map(session => (
-          <div
-            key={session.id}
-            onClick={() => {
-              if (editingSessionId !== session.id) {
-                setActiveSession(session.id)
-                setOpen(false)
-              }
-            }}
+      <div style={{
+        display: 'flex', flexDirection: 'column', gap: '8px', padding: '20px',
+        maxWidth: '720px', margin: '0 auto', height: '100%', overflowY: 'auto',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+          <p style={{ color: '#94a3b8', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600 }}>
+            Recent Conversations ({sessions.length})
+          </p>
+          <button
+            onClick={newSession}
             style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px',
-              padding: '8px 12px', borderRadius: '8px',
-              fontSize: '13px', cursor: editingSessionId === session.id ? 'default' : 'pointer', width: '100%',
-              background: activeSession === session.id ? 'rgba(192, 21, 42, 0.08)' : 'rgba(255, 255, 255, 0.01)',
-              border: activeSession === session.id ? '1px solid rgba(192, 21, 42, 0.4)' : '1px solid rgba(37, 31, 58, 0.5)',
-              color: activeSession === session.id ? '#fdebd0' : '#9a7e5a',
-              transition: 'all 0.2s',
+              display: 'flex', alignItems: 'center', gap: '6px',
+              padding: '6px 12px', borderRadius: '8px',
+              fontSize: '12px', fontWeight: 600, cursor: 'pointer',
+              background: 'linear-gradient(135deg, #8b5cf6, #ec4899)',
+              border: 'none', color: '#ffffff',
+              boxShadow: '0 2px 12px rgba(139, 92, 246, 0.4)',
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, minWidth: 0 }}>
-              <IconMessage size={14} style={{ color: activeSession === session.id ? '#c0152a' : '#5a4830', flexShrink: 0 }} />
-              {editingSessionId === session.id ? (
-                <input
-                  type="text"
-                  value={editingName}
-                  onChange={(e) => setEditingName(e.target.value)}
-                  onClick={(e) => e.stopPropagation()}
-                  style={{
-                    background: '#131025', border: '1px solid #c0152a',
-                    borderRadius: '4px', color: '#fdebd0', fontSize: '13px',
-                    padding: '2px 6px', width: '100%', outline: 'none',
-                  }}
-                  autoFocus
-                />
-              ) : (
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{session.name}</span>
-              )}
-            </div>
+            <IconPlus size={14} />
+            <span>New Chat</span>
+          </button>
+        </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
-              {editingSessionId === session.id ? (
-                <>
-                  <button
-                    onClick={(e) => saveRename(e, session.id)}
-                    style={{ background: 'transparent', border: 'none', color: '#4ade80', cursor: 'pointer', padding: '2px' }}
-                    title="Save"
-                  >
-                    <IconCheck size={14} />
-                  </button>
-                  <button
-                    onClick={cancelRename}
-                    style={{ background: 'transparent', border: 'none', color: '#f87171', cursor: 'pointer', padding: '2px' }}
-                    title="Cancel"
-                  >
-                    <IconX size={14} />
-                  </button>
-                </>
-              ) : (
-                <>
-                  <button
-                    onClick={(e) => startEditing(e, session)}
-                    style={{ background: 'transparent', border: 'none', color: '#9a7e5a', opacity: 0.6, cursor: 'pointer', padding: '2px' }}
-                    title="Rename"
-                  >
-                    <IconEdit size={13} />
-                  </button>
-                  <button
-                    onClick={(e) => handleDelete(e, session.id)}
-                    style={{ background: 'transparent', border: 'none', color: '#c0152a', opacity: 0.6, cursor: 'pointer', padding: '2px' }}
-                    title="Delete"
-                  >
-                    <IconTrash size={13} />
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
-        ))}
+        {sessions.map(session => {
+          const isActive = activeSession === session.id
+          const isEditing = editingSessionId === session.id
 
-        <button
-          onClick={newSession}
-          style={{
-            display: 'flex', alignItems: 'center', gap: '8px',
-            padding: '10px 12px', borderRadius: '8px',
-            fontSize: '13px', cursor: 'pointer', width: '100%',
-            background: 'transparent', border: '1px dashed #251f3a', color: '#9a7e5a',
-            marginTop: '4px', transition: 'all 0.2s',
-          }}
-        >
-          <IconPlus size={14} />
-          new conversation
-        </button>
+          return (
+            <div
+              key={session.id}
+              onClick={() => {
+                if (!isEditing) {
+                  setActiveSession(session.id)
+                  setOpen(false)
+                }
+              }}
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px',
+                padding: '10px 14px', borderRadius: '10px',
+                fontSize: '13.5px', cursor: isEditing ? 'default' : 'pointer', width: '100%',
+                background: isActive ? 'rgba(139, 92, 246, 0.15)' : 'rgba(255, 255, 255, 0.02)',
+                border: isActive ? '1px solid rgba(139, 92, 246, 0.45)' : '1px solid rgba(255, 255, 255, 0.06)',
+                color: isActive ? '#f8fafc' : '#94a3b8',
+                transition: 'all 0.18s ease',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, minWidth: 0 }}>
+                <IconMessage size={16} style={{ color: isActive ? '#c084fc' : '#64748b', flexShrink: 0 }} />
+                {isEditing ? (
+                  <input
+                    type="text"
+                    value={editingName}
+                    onChange={(e) => setEditingName(e.target.value)}
+                    onClick={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => e.key === 'Enter' && saveRename(e, session.id)}
+                    style={{
+                      background: '#070913', border: '1px solid #8b5cf6',
+                      borderRadius: '6px', color: '#f8fafc', fontSize: '13px',
+                      padding: '4px 8px', width: '100%', outline: 'none',
+                    }}
+                    autoFocus
+                  />
+                ) : (
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: isActive ? 600 : 400 }}>
+                    {session.name}
+                  </span>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                {isEditing ? (
+                  <>
+                    <button
+                      onClick={(e) => saveRename(e, session.id)}
+                      style={{ background: 'transparent', border: 'none', color: '#10b981', cursor: 'pointer', padding: '3px' }}
+                      title="Save"
+                    >
+                      <IconCheck size={15} />
+                    </button>
+                    <button
+                      onClick={cancelRename}
+                      style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '3px' }}
+                      title="Cancel"
+                    >
+                      <IconX size={15} />
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      onClick={(e) => startEditing(e, session)}
+                      style={{ background: 'transparent', border: 'none', color: '#94a3b8', opacity: 0.7, cursor: 'pointer', padding: '3px' }}
+                      title="Rename"
+                    >
+                      <IconEdit size={14} />
+                    </button>
+                    <button
+                      onClick={(e) => handleDelete(e, session.id)}
+                      style={{ background: 'transparent', border: 'none', color: '#ef4444', opacity: 0.7, cursor: 'pointer', padding: '3px' }}
+                      title="Delete"
+                    >
+                      <IconTrash size={14} />
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          )
+        })}
       </div>
     </div>
   )
-}
+}

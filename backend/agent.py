@@ -14,13 +14,24 @@ from tools.email_tool import (
     send_email,
 )
 from tools.pdf_tool import create_topic_pdf, extract_pdf_text, modify_pdf_section, find_replace_in_pdf
-from memory import get_relevant_context, get_recent_context, save_conversation, count_raw_turns, summarize_old_turns
+from memory import (
+    get_relevant_context,
+    get_recent_context,
+    save_conversation,
+    count_raw_turns,
+    summarize_old_turns,
+    save_document_memory,
+    get_session_documents,
+    get_latest_session_document,
+    get_long_term_memory,
+    get_session_uploaded_documents,
+)
 
 load_dotenv()
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
-GROQ_CODE_MODEL = os.getenv("GROQ_CODE_MODEL", "llama-3.1-8b-instant")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
+GROQ_CODE_MODEL = os.getenv("GROQ_CODE_MODEL", "qwen/qwen3.8-27b")
 
 # Primary model — general reasoning and chat
 llama_model = Groq(id=GROQ_MODEL, api_key=GROQ_API_KEY)
@@ -81,8 +92,27 @@ COMMON_EMAIL_TLDS = (
     "co.in", "co.uk", "com.au", "com", "net", "org", "edu", "gov", "io", "ai",
     "dev", "in", "co", "uk",
 )
-PENDING_EMAILS: dict[str, dict] = {}
-SESSION_PDFS: dict[str, dict] = {}
+PENDING_EMAILS: dict[str, list[dict]] = {}
+SESSION_PDFS: dict[str, list[dict]] = {}
+
+
+def _remember_pdf(session_id: str, entry: dict):
+    if session_id not in SESSION_PDFS or not isinstance(SESSION_PDFS[session_id], list):
+        SESSION_PDFS[session_id] = []
+    SESSION_PDFS[session_id] = [
+        p for p in SESSION_PDFS[session_id]
+        if isinstance(p, dict) and p.get("path") != entry.get("path")
+    ]
+    SESSION_PDFS[session_id].append(entry)
+
+
+def _get_latest_pdf(session_id: str) -> dict | None:
+    val = SESSION_PDFS.get(session_id)
+    if isinstance(val, list) and val:
+        return val[-1]
+    if isinstance(val, dict):
+        return val
+    return None
 
 APPROVAL_KEYWORDS = {
     "yes", "yes send", "send", "send it", "send email", "send this",
@@ -107,11 +137,18 @@ def needs_email(user_text: str) -> bool:
 
 def needs_pdf(user_text: str, pdf_path: str | None = None, session_id: str | None = None) -> bool:
     text = user_text.lower()
-    if bool(pdf_path):
+    explicit_pdf_actions = [
+        "summarize", "summarise", "summary", "extract", "text from",
+        "read this pdf", "read the pdf", "modify", "update section",
+        "replace section", "change section",
+    ]
+    if bool(pdf_path) and any(k in text for k in explicit_pdf_actions):
         return True
-    if any(k in text for k in PDF_KEYWORDS) or bool(_PDF_CREATE_RE.search(text)):
+    if bool(_PDF_CREATE_RE.search(text)):
         return True
-    if session_id and session_id in SESSION_PDFS:
+    if any(k in text for k in PDF_KEYWORDS) and any(k in text for k in explicit_pdf_actions):
+        return True
+    if session_id and bool(SESSION_PDFS.get(session_id)):
         if any(k in text for k in PDF_FOLLOWUP_KEYWORDS):
             return True
     return False
@@ -205,6 +242,64 @@ def is_rejection(text: str) -> bool:
     normalized = re.sub(r"[^\w\s]", "", text.strip().lower())
     normalized = re.sub(r"\s+", " ", normalized)
     return normalized in REJECTION_KEYWORDS
+
+
+def find_referred_pdf(user_text: str, pdf_list: list[dict]) -> dict | None:
+    """Select the correct PDF from the uploaded PDF list based on user reference."""
+    if not pdf_list:
+        return None
+
+    text = user_text.lower().strip()
+    
+    # 1. "previous previous" / "second to last"
+    if "previous previous" in text or "second to last" in text or "before the last" in text or "second-to-last" in text:
+        if len(pdf_list) >= 3:
+            return pdf_list[-3]
+        if len(pdf_list) >= 2:
+            return pdf_list[-2]
+        return pdf_list[0]
+
+    # 2. "previous" / "last" / "before"
+    if "previous" in text or "before" in text:
+        if len(pdf_list) >= 2:
+            return pdf_list[-2]
+        return pdf_list[0]
+
+    # Default is the latest one
+    return pdf_list[-1]
+
+
+def find_referred_email(user_text: str, email_list: list[dict]) -> tuple[dict | None, int]:
+    """Select the correct email from the pending drafts list based on user reference."""
+    if not email_list:
+        return None, -1
+
+    text = user_text.lower().strip()
+    
+    # 1. "first" / "1st"
+    if "first" in text or "1st" in text:
+        return email_list[0], 0
+        
+    # 2. "before that one" / "previous" / "second to last" / "second-to-last"
+    if "before that" in text or "previous" in text or "second to last" in text or "second-to-last" in text:
+        if len(email_list) >= 2:
+            return email_list[-2], len(email_list) - 2
+        return email_list[0], 0
+        
+    # 3. "second" / "2nd"
+    if "second" in text or "2nd" in text:
+        if len(email_list) >= 2:
+            return email_list[1], 1
+            
+    # 4. Default approval keywords or "last"
+    if is_approval(user_text) or any(k in text for k in ["send it", "send this", "go ahead", "mail it", "last"]):
+        return email_list[-1], len(email_list) - 1
+        
+    # Generic "send email" command
+    if "send" in text and ("email" in text or "mail" in text):
+        return email_list[-1], len(email_list) - 1
+
+    return None, -1
 
 
 def parse_direct_email_request(user_text: str) -> dict | None:
@@ -607,11 +702,11 @@ async def handle_pdf_request(
             result = create_topic_pdf(topic, body_content)
             if not result.get("success"):
                 return f"I could not create the PDF: {result.get('error', 'Unknown error')}"
-            SESSION_PDFS[session_id] = {
+            _remember_pdf(session_id, {
                 "path": result["path"],
                 "filename": result["filename"],
                 "topic": topic,
-            }
+            })
             return f"I created a neat PDF about {topic}.\n{_download_line(result)}"
         else:
             writer_prompt = (
@@ -630,14 +725,14 @@ async def handle_pdf_request(
             result = create_topic_pdf(topic, generated.content.strip())
             if not result.get("success"):
                 return f"I could not create the PDF: {result.get('error', 'Unknown error')}"
-            SESSION_PDFS[session_id] = {
+            _remember_pdf(session_id, {
                 "path": result["path"],
                 "filename": result["filename"],
                 "topic": topic,
-            }
+            })
             return f"I created a neat PDF about {topic}.\n{_download_line(result)}"
 
-    remembered = SESSION_PDFS.get(session_id)
+    remembered = _get_latest_pdf(session_id)
 
     # --- Enrich / expand existing PDF ---
     if wants_enrichment and remembered and not has_create_trigger:
@@ -666,11 +761,11 @@ async def handle_pdf_request(
         if not result.get("success"):
             return f"I could not recreate the PDF with more information: {result.get('error', 'Unknown error')}"
 
-        SESSION_PDFS[session_id] = {
+        _remember_pdf(session_id, {
             "path": result["path"],
             "filename": result["filename"],
             "topic": topic,
-        }
+        })
         return f"I recreated the PDF about {topic} with much more information.\n{_download_line(result)}"
 
     # --- Rewrite as paragraph prose ---
@@ -697,11 +792,11 @@ async def handle_pdf_request(
         if not result.get("success"):
             return f"I could not recreate the PDF in paragraph format: {result.get('error', 'Unknown error')}"
 
-        SESSION_PDFS[session_id] = {
+        _remember_pdf(session_id, {
             "path": result["path"],
             "filename": result["filename"],
             "topic": topic,
-        }
+        })
         return f"I recreated the PDF in paragraph-wise format.\n{_download_line(result)}"
 
     # --- Rewrite as point-wise / bullets ---
@@ -728,11 +823,11 @@ async def handle_pdf_request(
         if not result.get("success"):
             return f"I could not recreate the PDF in bullet-points format: {result.get('error', 'Unknown error')}"
 
-        SESSION_PDFS[session_id] = {
+        _remember_pdf(session_id, {
             "path": result["path"],
             "filename": result["filename"],
             "topic": topic,
-        }
+        })
         return f"I recreated the PDF in bullet-points format.\n{_download_line(result)}"
 
     if not pdf_path:
@@ -753,7 +848,7 @@ async def handle_pdf_request(
         if find_replace:
             result = find_replace_in_pdf(pdf_path, find_replace["find"], find_replace["replace"])
             if result.get("success"):
-                SESSION_PDFS[session_id] = {"path": result["path"], "filename": result["filename"]}
+                _remember_pdf(session_id, {"path": result["path"], "filename": result["filename"]})
                 return (
                     f"I replaced \"{find_replace['find']}\" with \"{find_replace['replace']}\" in {pdf_filename or 'the PDF'} "
                     f"and preserved the rest of the document.\n{_download_line(result)}"
@@ -766,7 +861,7 @@ async def handle_pdf_request(
                 if resolved:
                     result = find_replace_in_pdf(pdf_path, resolved["find"], resolved["replace"])
                     if result.get("success"):
-                        SESSION_PDFS[session_id] = {"path": result["path"], "filename": result["filename"]}
+                        _remember_pdf(session_id, {"path": result["path"], "filename": result["filename"]})
                         return (
                             f"I replaced \"{resolved['find']}\" with \"{resolved['replace']}\" in {pdf_filename or 'the PDF'} "
                             f"and preserved the rest of the document.\n{_download_line(result)}"
@@ -777,7 +872,7 @@ async def handle_pdf_request(
             if resolved:
                 result = find_replace_in_pdf(pdf_path, resolved["find"], resolved["replace"])
                 if result.get("success"):
-                    SESSION_PDFS[session_id] = {"path": result["path"], "filename": result["filename"]}
+                    _remember_pdf(session_id, {"path": result["path"], "filename": result["filename"]})
                     return (
                         f"I replaced \"{resolved['find']}\" with \"{resolved['replace']}\" in {pdf_filename or 'the PDF'} "
                         f"and preserved the rest of the document.\n{_download_line(result)}"
@@ -787,7 +882,7 @@ async def handle_pdf_request(
         if parsed["section"] and parsed["replacement"]:
             result = modify_pdf_section(pdf_path, parsed["section"], parsed["replacement"])
             if result.get("success"):
-                SESSION_PDFS[session_id] = {"path": result["path"], "filename": result["filename"]}
+                _remember_pdf(session_id, {"path": result["path"], "filename": result["filename"]})
                 return (
                     f"I updated only the \"{result['section']}\" section in {pdf_filename or 'the PDF'} "
                     f"and preserved the rest of the document.\n{_download_line(result)}"
@@ -815,12 +910,32 @@ async def handle_pdf_request(
             f"{extraction['text']}"
         )
         summary = await summarizer.arun(summary_prompt)
+        summary_text = summary.content.strip()
         note = "\n\nNote: I summarized the first extracted portion because the PDF is long." if extraction.get("truncated") else ""
-        return f"Here is the summary of {pdf_filename or 'the PDF'}:\n\n{summary.content.strip()}{note}"
+
+        # Persist PDF content into vector memory so the assistant can recall it later
+        await save_document_memory(
+            session_id,
+            extraction["text"],
+            filename=pdf_filename,
+            summary=summary_text,
+            file_path=pdf_path,
+        )
+
+        return f"Here is the summary of {pdf_filename or 'the PDF'}:\n\n{summary_text}{note}"
 
     extracted = extraction["text"]
     if extraction.get("truncated"):
         extracted += "\n\n[Text was truncated because the PDF is long.]"
+
+    # Persist PDF content into vector memory so the assistant can recall it later
+    await save_document_memory(
+        session_id,
+        extraction["text"],
+        filename=pdf_filename,
+        file_path=pdf_path,
+    )
+
     return f"Extracted text from {pdf_filename or 'the PDF'}:\n\n{extracted}"
 
 
@@ -834,37 +949,85 @@ async def generate_reply(
     web_search_called.set(False)
     email_last_action.set(None)
 
-    # Remember the uploaded PDF for follow-up commands
+    # Process and save the uploaded PDF immediately to store it in session-scoped document memory
     if pdf_path:
-        SESSION_PDFS[session_id] = {"path": pdf_path, "filename": pdf_filename}
+        _remember_pdf(session_id, {"path": pdf_path, "filename": pdf_filename})
+        extraction = extract_pdf_text(pdf_path)
+        if not extraction.get("success"):
+            return f"I encountered an error trying to read the PDF: {extraction.get('error', 'Unknown error')}"
+        if not extraction.get("text"):
+            return f"I opened \"{pdf_filename}\" but could not find any selectable text. It may be scanned, image-only, or empty."
+        
+        await save_document_memory(
+            session_id=session_id,
+            document_text=extraction["text"],
+            filename=pdf_filename,
+            file_path=pdf_path,
+        )
 
-    # 1. Retrieve context. Recent turns preserve continuity; vector memory is background.
+    # Restore the session's PDF history list from the DB if not present in memory
+    if session_id not in SESSION_PDFS or not SESSION_PDFS[session_id]:
+        db_docs = await get_session_uploaded_documents(session_id)
+        SESSION_PDFS[session_id] = db_docs
+
+    # Find which PDF the user is referring to (e.g. "previous pdf", "previous previous pdf")
+    active_pdf = find_referred_pdf(user_text, SESSION_PDFS.get(session_id, []))
+    if active_pdf:
+        pdf_path = active_pdf["path"]
+        pdf_filename = active_pdf["filename"]
+
+    active_filename = pdf_filename
+
+    # 1. Retrieve Context Pipeline
+    # Retrieve current session document content (filtered strictly by session_id and active_filename)
+    document_context = await get_session_documents(session_id, active_filename)
+    if not document_context and active_pdf and pdf_path:
+        extraction = extract_pdf_text(pdf_path)
+        if extraction.get("success") and extraction.get("text"):
+            label = active_filename or "uploaded document"
+            document_context = f"[Document: {label}]\n{extraction['text'][:12000]}"
+
+    # Retrieve recent conversation turns within the session
     recent_context = await get_recent_context(session_id)
-    if is_vague_followup(user_text):
-        long_term_context = ""
-    else:
-        long_term_context = await get_relevant_context(
+
+    # Search long-term memory/preferences
+    long_term_context = ""
+    if not is_vague_followup(user_text):
+        long_term_context = await get_long_term_memory(user_text)
+
+    # Search relevant conversation vector memory inside this session
+    relevant_session_context = ""
+    if not is_vague_followup(user_text):
+        relevant_session_context = await get_relevant_context(
             user_text,
             session_id,
             include_summaries=True,
         )
+
     context_parts = []
+    if document_context:
+        context_parts.append(f"Uploaded Document Context:\n{document_context}")
     if recent_context:
-        context_parts.append(f"Recent conversation:\n{recent_context}")
+        context_parts.append(f"Recent Conversation:\n{recent_context}")
+    if relevant_session_context:
+        context_parts.append(f"Relevant Conversation Memory:\n{relevant_session_context}")
     if long_term_context:
-        context_parts.append(f"Relevant long-term memory:\n{long_term_context}")
+        context_parts.append(f"User Preferences & Long-Term Memory:\n{long_term_context}")
+
     context = "\n\n".join(context_parts)
 
     # ── Email routing (check BEFORE PDF to avoid mis-routing "write a mail" as PDF) ──
-    pending_email = PENDING_EMAILS.get(session_id)
-    if pending_email:
+    pending_emails = PENDING_EMAILS.get(session_id, [])
+    email_to_action, idx = find_referred_email(user_text, pending_emails)
+    
+    if email_to_action:
         user_approval_text = user_text.lower()
-        is_approved_msg = is_approval(user_text) or any(k in user_approval_text for k in ["save", "draft", "keep"])
+        is_approved_msg = is_approval(user_text) or any(k in user_approval_text for k in ["save", "draft", "keep", "send the", "send it", "mail it", "send the first", "send the mail before"])
         if is_approved_msg:
             is_draft_confirm = any(k in user_approval_text for k in ["draft", "save", "keep", "dont send", "don't send"])
             is_send_confirm = any(k in user_approval_text for k in ["send", "go ahead", "approve", "mail it"])
             
-            final_action = pending_email["action"]
+            final_action = email_to_action["action"]
             if is_send_confirm and not is_draft_confirm:
                 final_action = "send"
             elif is_draft_confirm and not is_send_confirm:
@@ -872,30 +1035,31 @@ async def generate_reply(
 
             if final_action == "draft":
                 result = draft_email(
-                    pending_email["to"],
-                    pending_email["subject"],
-                    pending_email["body"],
-                    cc=pending_email.get("cc"),
-                    bcc=pending_email.get("bcc"),
+                    email_to_action["to"],
+                    email_to_action["subject"],
+                    email_to_action["body"],
+                    cc=email_to_action.get("cc"),
+                    bcc=email_to_action.get("bcc"),
                 )
                 reply = format_email_action_result("draft", result)
             else:
                 result = send_email(
-                    pending_email["to"],
-                    pending_email["subject"],
-                    pending_email["body"],
-                    cc=pending_email.get("cc"),
-                    bcc=pending_email.get("bcc"),
+                    email_to_action["to"],
+                    email_to_action["subject"],
+                    email_to_action["body"],
+                    cc=email_to_action.get("cc"),
+                    bcc=email_to_action.get("bcc"),
                 )
                 reply = format_email_action_result("send", result)
 
-            PENDING_EMAILS.pop(session_id, None)
+            if result.get("success"):
+                PENDING_EMAILS[session_id].pop(idx)
             await save_conversation(user_text, reply, session_id)
             return reply
 
-    if pending_email and is_rejection(user_text):
-        PENDING_EMAILS.pop(session_id, None)
-        reply = "Canceled. I did not send or save that email."
+    if pending_emails and is_rejection(user_text):
+        PENDING_EMAILS[session_id] = []
+        reply = "Canceled. I did not send or save the pending emails."
         await save_conversation(user_text, reply, session_id)
         return reply
 
@@ -906,7 +1070,9 @@ async def generate_reply(
         else:
             composed = await compose_email_subject_and_body(direct_email, context)
             direct_email.update(composed)
-            PENDING_EMAILS[session_id] = direct_email
+            if session_id not in PENDING_EMAILS:
+                PENDING_EMAILS[session_id] = []
+            PENDING_EMAILS[session_id].append(direct_email)
             reply = format_pending_email(direct_email)
 
         await save_conversation(user_text, reply, session_id)
