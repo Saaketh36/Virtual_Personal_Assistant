@@ -14,9 +14,9 @@ from memory import delete_session, get_session_documents
 from tools.pdf_tool import create_topic_pdf
 
 # Mock send_email so test verifies reference routing without requiring live Gmail token
-tools.email_tool.send_email = lambda to, subject, body, cc=None, bcc=None: {
+tools.email_tool.send_email = lambda to, subject, body, cc=None, bcc=None, attachments=None, **kwargs: {
     "success": True,
-    "message": f"Email sent to {to} with subject '{subject}'",
+    "message": f"Email sent to {to} with subject '{subject}'" + (f" with {len(attachments)} attachment(s)" if attachments else ""),
     "message_id": "test_msg_id_123",
 }
 import agent

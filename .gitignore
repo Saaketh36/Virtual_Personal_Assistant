@@ -1,4 +1,4 @@
-﻿vpa/
+vpa/
 venv/
 pgvector/
 __pycache__/
@@ -6,3 +6,8 @@ __pycache__/
 .env
 *.db
 .DS_Store
+credentials.json
+backend/credentials.json
+token.json
+backend/token.json
+data/

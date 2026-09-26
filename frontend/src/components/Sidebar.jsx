@@ -8,7 +8,6 @@ import {
   IconLayoutSidebarLeftCollapse,
   IconMail,
   IconFileText,
-  IconWorldSearch,
   IconMicrophone,
   IconCommand,
   IconSettings,
@@ -82,11 +81,14 @@ export default function Sidebar({
               display: 'flex',
               alignItems: 'center',
               justify: 'center',
+              textAlign: 'center',
               color: '#ffffff',
               fontWeight: 800,
               fontSize: '16px',
               fontFamily: 'Outfit, sans-serif',
+              lineHeight: 1,
               boxShadow: '0 4px 16px rgba(99, 102, 241, 0.4)',
+              flexShrink: 0,
             }}
           >
             N
@@ -237,26 +239,6 @@ export default function Sidebar({
               )}
             </div>
 
-            <div
-              onClick={() => onSelectWorkspaceCategory && onSelectWorkspaceCategory('web')}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '12px',
-                padding: '10px 12px',
-                borderRadius: '14px',
-                cursor: 'pointer',
-                color: '#94a3b8',
-                fontSize: '13.5px',
-                fontWeight: 500,
-                transition: 'all 0.15s ease',
-              }}
-              onMouseEnter={e => e.currentTarget.style.color = '#f8fafc'}
-              onMouseLeave={e => e.currentTarget.style.color = '#94a3b8'}
-            >
-              <IconWorldSearch size={17} style={{ color: '#38bdf8' }} />
-              <span>Web</span>
-            </div>
 
             <div
               onClick={onOpenVoiceModal}
@@ -451,9 +433,12 @@ export default function Sidebar({
                 display: 'flex',
                 alignItems: 'center',
                 justify: 'center',
+                textAlign: 'center',
                 color: '#fff',
                 fontSize: '13px',
                 fontWeight: 700,
+                lineHeight: 1,
+                flexShrink: 0,
               }}
             >
               N

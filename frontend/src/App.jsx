@@ -31,6 +31,79 @@ function App() {
 
   const activeSessionItem = sessions.find(s => s.id === activeSession)
 
+  // Load all sessions from the backend while strictly preserving the current active session
+  const loadSessions = async (targetActiveId = null) => {
+    try {
+      const res = await fetch('http://localhost:8000/sessions')
+      if (res.ok) {
+        const data = await res.json()
+        if (data.sessions && data.sessions.length > 0) {
+          setSessions(prev => {
+            const currentId = targetActiveId || activeSession
+            const activeInPrev = prev.find(s => s.id === currentId)
+            const activeInDB = data.sessions.some(s => s.id === currentId)
+
+            // If user's current session is newly created and not yet in the DB, retain it at top
+            if (!activeInDB && activeInPrev) {
+              return [activeInPrev, ...data.sessions.filter(s => s.id !== activeInPrev.id)]
+            }
+            return data.sessions
+          })
+
+          // Maintain active session stably — never bounce back to past sessions
+          if (targetActiveId) {
+            setActiveSession(targetActiveId)
+          } else {
+            setActiveSession(prev => {
+              if (prev) return prev
+              return data.sessions[0].id
+            })
+          }
+        }
+      }
+    } catch (err) {
+      console.error('[Error loading sessions]', err)
+    }
+  }
+
+  // Load message history for a specific session
+  const loadSessionMessages = async (sessionId) => {
+    if (!sessionId) return
+    try {
+      const res = await fetch(`http://localhost:8000/sessions/${sessionId}/messages`)
+      if (res.ok) {
+        const data = await res.json()
+        if (data.messages && data.messages.length > 0) {
+          setMessages(data.messages)
+          return
+        }
+      }
+      setMessages([
+        {
+          id: Date.now(),
+          role: 'agent',
+          content: "Welcome to **Nexus Studio** — your intelligent AI workspace. How can I help you today?",
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          model: 'llama 3.1 8b',
+        }
+      ])
+    } catch (err) {
+      console.error('[Error loading session messages]', err)
+    }
+  }
+
+  // Load sessions on mount
+  useEffect(() => {
+    loadSessions()
+  }, [])
+
+  // Load messages whenever activeSession changes
+  useEffect(() => {
+    if (activeSession) {
+      loadSessionMessages(activeSession)
+    }
+  }, [activeSession])
+
   // Global Keyboard Shortcuts (Cmd/Ctrl + K, Cmd/Ctrl + B)
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -88,8 +161,10 @@ function App() {
     URL.revokeObjectURL(url)
   }
 
-  const sendMessage = async (text, attachment = null) => {
+  const sendMessage = async (text, attachment = null, enableWeb = true) => {
     if ((!text.trim() && !attachment) || loading) return
+
+    const currentSessionId = activeSession || 'default'
 
     const userMsg = {
       id: Date.now(),
@@ -107,7 +182,7 @@ function App() {
         const timeout = setTimeout(() => controller.abort(), 120000)
         const formData = new FormData()
         formData.append('message', text || 'Summarize this PDF')
-        formData.append('session_id', activeSession)
+        formData.append('session_id', currentSessionId)
         formData.append('file', attachment)
         res = await fetch('http://localhost:8000/chat-pdf', {
           method: 'POST',
@@ -119,7 +194,11 @@ function App() {
         res = await fetch('http://localhost:8000/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: text, session_id: activeSession }),
+          body: JSON.stringify({
+            message: text,
+            session_id: currentSessionId,
+            enable_web: enableWeb,
+          }),
         })
       }
       if (!res.ok) {
@@ -134,6 +213,8 @@ function App() {
         model: data.model || 'llama 3.1 8b',
         usedSearch: data.used_search,
       }])
+      // Refresh session list to show new preview title while staying on this current session
+      loadSessions(currentSessionId)
     } catch (err) {
       console.error('[PDF/Chat error]', err)
       let msg = 'Something went wrong. Is the backend running?'
@@ -155,6 +236,8 @@ function App() {
   }
 
   const handleVoiceReply = (data) => {
+    const currentSessionId = activeSession || 'default'
+
     const userMsg = {
       id: Date.now(),
       role: 'user',
@@ -163,15 +246,19 @@ function App() {
     }
 
     if (data.audio) {
-      const audioBytes = atob(data.audio)
-      const arrayBuffer = new Uint8Array(audioBytes.length)
-      for (let i = 0; i < audioBytes.length; i++) {
-        arrayBuffer[i] = audioBytes.charCodeAt(i)
+      try {
+        const audioBytes = atob(data.audio)
+        const arrayBuffer = new Uint8Array(audioBytes.length)
+        for (let i = 0; i < audioBytes.length; i++) {
+          arrayBuffer[i] = audioBytes.charCodeAt(i)
+        }
+        const blob = new Blob([arrayBuffer], { type: 'audio/wav' })
+        const url = URL.createObjectURL(blob)
+        const audio = new Audio(url)
+        audio.play().catch(e => console.warn('[Audio autoplay error]', e))
+      } catch (e) {
+        console.warn('[Audio decode error]', e)
       }
-      const blob = new Blob([arrayBuffer], { type: 'audio/wav' })
-      const url = URL.createObjectURL(blob)
-      const audio = new Audio(url)
-      audio.play()
     }
 
     const agentMsg = {
@@ -186,9 +273,18 @@ function App() {
     }
 
     setMessages(prev => [...prev, userMsg, agentMsg])
+    loadSessions(currentSessionId)
   }
 
-  const deleteSession = (id) => {
+  const deleteSession = async (id) => {
+    try {
+      await fetch(`http://localhost:8000/sessions/${id}`, {
+        method: 'DELETE',
+      })
+    } catch (err) {
+      console.error('[Error deleting session from backend]', err)
+    }
+
     setSessions(prev => {
       const filtered = prev.filter(s => s.id !== id)
       if (filtered.length === 0) {
@@ -205,6 +301,14 @@ function App() {
 
   const renameSession = (id, newName) => {
     setSessions(prev => prev.map(s => s.id === id ? { ...s, name: newName } : s))
+  }
+
+  const handleCommandAction = (type) => {
+    if (type === 'pdf') {
+      sendMessage('Please summarize the uploaded document and extract the key takeaways.')
+    } else if (type === 'code') {
+      sendMessage('Write a clean, efficient Python program with comments and error handling.')
+    }
   }
 
   return (
@@ -275,6 +379,7 @@ function App() {
         onOpenVoice={() => setVoiceModalOpen(true)}
         onExport={exportChat}
         onClear={() => setMessages([])}
+        onRunAction={handleCommandAction}
       />
 
       {/* Immersive Voice Mode Modal */}

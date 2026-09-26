@@ -115,7 +115,7 @@ export default function Topbar({
                 boxShadow: '0 0 8px #10b981',
               }}
             />
-            <span>● Ready</span>
+            <span>Ready</span>
           </div>
 
           {/* Command Spotlight Button */}

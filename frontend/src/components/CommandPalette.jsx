@@ -14,20 +14,36 @@ import {
 
 export default function CommandPalette({
   open,
+  isOpen,
   onClose,
+  onNewChat,
+  onOpenGmail,
+  onOpenVoice,
+  onExport,
+  onClear,
   onRunAction,
 }) {
+  const isVisible = open || isOpen
   const [query, setQuery] = useState('')
   const [selectedIndex, setSelectedIndex] = useState(0)
 
+  const handleAction = (type) => {
+    if (type === 'gmail' && onOpenGmail) onOpenGmail()
+    else if (type === 'new_chat' && onNewChat) onNewChat()
+    else if (type === 'voice' && onOpenVoice) onOpenVoice()
+    else if (type === 'export' && onExport) onExport()
+    else if (type === 'clear' && onClear) onClear()
+    else if (onRunAction) onRunAction(type)
+    if (onClose) onClose()
+  }
+
   const COMMANDS = [
-    { id: 'gmail', group: 'Actions', title: 'Check unread Gmail', icon: IconMail, color: '#ec4899', action: () => onRunAction('gmail') },
-    { id: 'doc', group: 'Actions', title: 'Summarize document / PDF', icon: IconFileText, color: '#8b5cf6', action: () => onRunAction('pdf') },
-    { id: 'web', group: 'Actions', title: 'Search tech news on Web', icon: IconWorldSearch, color: '#06b6d4', action: () => onRunAction('web') },
-    { id: 'code', group: 'Actions', title: 'Generate Python script', icon: IconCode, color: '#10b981', action: () => onRunAction('code') },
-    { id: 'voice', group: 'Actions', title: 'Start Voice Session', icon: IconMicrophone, color: '#f472b6', action: () => onRunAction('voice') },
-    { id: 'new_chat', group: 'Navigation', title: 'Create New Conversation', icon: IconPlus, color: '#a855f7', action: () => onRunAction('new_chat') },
-    { id: 'export', group: 'Navigation', title: 'Export Chat to Markdown', icon: IconDownload, color: '#38bdf8', action: () => onRunAction('export') },
+    { id: 'gmail', group: 'Actions', title: 'Check unread Gmail', icon: IconMail, color: '#ec4899', action: () => handleAction('gmail') },
+    { id: 'doc', group: 'Actions', title: 'Summarize document / PDF', icon: IconFileText, color: '#8b5cf6', action: () => handleAction('pdf') },
+    { id: 'code', group: 'Actions', title: 'Generate Python script', icon: IconCode, color: '#10b981', action: () => handleAction('code') },
+    { id: 'voice', group: 'Actions', title: 'Start Voice Session', icon: IconMicrophone, color: '#f472b6', action: () => handleAction('voice') },
+    { id: 'new_chat', group: 'Navigation', title: 'Create New Conversation', icon: IconPlus, color: '#a855f7', action: () => handleAction('new_chat') },
+    { id: 'export', group: 'Navigation', title: 'Export Chat to Markdown', icon: IconDownload, color: '#38bdf8', action: () => handleAction('export') },
   ]
 
   const filtered = COMMANDS.filter(c =>
@@ -41,7 +57,7 @@ export default function CommandPalette({
 
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if (!open) return
+      if (!isVisible) return
       if (e.key === 'Escape') {
         onClose()
       } else if (e.key === 'ArrowDown') {
@@ -60,9 +76,9 @@ export default function CommandPalette({
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [open, selectedIndex, filtered, onClose])
+  }, [isVisible, selectedIndex, filtered, onClose])
 
-  if (!open) return null
+  if (!isVisible) return null
 
   return (
     <div

@@ -1,4 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+import remarkMath from 'remark-math'
+import rehypeKatex from 'rehype-katex'
+import 'katex/dist/katex.min.css'
 import {
   IconFileTypePdf,
   IconDownload,
@@ -14,9 +19,6 @@ import {
   IconChevronDown,
   IconChevronRight,
   IconSettings,
-  IconClock,
-  IconFolder,
-  IconTerminal2,
 } from '@tabler/icons-react'
 
 function getTimeAwareGreeting() {
@@ -25,41 +27,6 @@ function getTimeAwareGreeting() {
   if (hour < 18) return 'Good afternoon'
   return 'Good evening'
 }
-
-const DASHBOARD_CARDS = [
-  {
-    icon: IconMail,
-    title: 'Gmail Inbox',
-    desc: 'Summarize unread & priority emails',
-    prompt: 'Check my Gmail inbox for unread messages and summarize key action items.',
-    accent: '#ec4899',
-    badge: '3 Unread',
-  },
-  {
-    icon: IconFileText,
-    title: 'Documents & RAG',
-    desc: 'Upload PDF and query insights',
-    prompt: 'Please summarize the attached PDF document and list key metrics.',
-    accent: '#8b5cf6',
-    badge: 'Chroma DB',
-  },
-  {
-    icon: IconWorldSearch,
-    title: 'Web Research',
-    desc: 'Live web search with DuckDuckGo',
-    prompt: 'Search the web for recent artificial intelligence news and summarize.',
-    accent: '#38bdf8',
-    badge: 'Live',
-  },
-  {
-    icon: IconCode,
-    title: 'Build & Code',
-    desc: 'Generate Python scripts & algorithms',
-    prompt: 'Write a clean Python script using asyncio to process JSON data.',
-    accent: '#10b981',
-    badge: 'Python 3.11',
-  },
-]
 
 function HomeDashboard({ onSelectPrompt }) {
   const greeting = getTimeAwareGreeting()
@@ -118,13 +85,16 @@ function HomeDashboard({ onSelectPrompt }) {
           background: 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)',
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'center',
+          justify: 'center',
+          textAlign: 'center',
+          lineHeight: 1,
           color: '#ffffff',
           fontWeight: 800,
           fontSize: '26px',
           boxShadow: '0 12px 30px rgba(99, 102, 241, 0.45)',
           marginBottom: '20px',
           fontFamily: 'Outfit, sans-serif',
+          flexShrink: 0,
         }}
       >
         N
@@ -190,6 +160,7 @@ function HomeDashboard({ onSelectPrompt }) {
             style={{
               display: 'inline-flex',
               alignItems: 'center',
+              justifyContent: 'center',
               gap: '8px',
               padding: '10px 18px',
               borderRadius: '24px',
@@ -248,7 +219,7 @@ function ToolExecutionTimeline({ usedSearch, executionSteps = [] }) {
           width: '100%',
           display: 'flex',
           alignItems: 'center',
-          justify: 'space-between',
+          justifyContent: 'space-between',
           padding: '8px 12px',
           background: 'none',
           border: 'none',
@@ -302,7 +273,7 @@ function CodeBlock({ language, code }) {
       <div
         style={{
           display: 'flex',
-          justify: 'space-between',
+          justifyContent: 'space-between',
           alignItems: 'center',
           padding: '7px 14px',
           background: 'rgba(255, 255, 255, 0.03)',
@@ -397,59 +368,131 @@ function PdfDownloadCard({ url }) {
   )
 }
 
+function preprocessFormatting(text) {
+  if (!text) return ''
+  let result = text
+  // Convert [\boxed{...}] or [ \boxed{...} ] to $$ \boxed{...} $$
+  result = result.replace(/\[\s*(\\boxed\{[^}]+\})\s*\]/g, '$$ $1 $$')
+  // Convert standalone \boxed{...} without math delimiters to $$ \boxed{...} $$
+  result = result.replace(/(?<!\$)\s*(\\boxed\{[^}]+\})\s*(?!\$)/g, ' $$ $1 $$ ')
+  // Convert \[ ... \] display math to $$ ... $$
+  result = result.replace(/\\\[([\s\S]*?)\\\]/g, '$$$$ $1 $$$$')
+  // Convert \( ... \) inline math to $ ... $
+  result = result.replace(/\\\(([\s\S]*?)\\\)/g, '$ $1 $')
+  // Ensure standalone bold lines before bullet points have proper markdown paragraph break
+  result = result.replace(/^(\*\*[^*\n]+\*\*)\s*\n(?=[-*•\d])/gm, '$1\n\n')
+  return result
+}
+
 function FormattedMarkdown({ content }) {
   if (!content) return null
-
-  const parts = []
-  const codeRegex = /```(\w*)\n([\s\S]*?)```/g
-  let lastIndex = 0
-  let match
-
-  while ((match = codeRegex.exec(content)) !== null) {
-    if (match.index > lastIndex) {
-      parts.push({ type: 'text', value: content.substring(lastIndex, match.index) })
-    }
-    parts.push({ type: 'code', language: match[1], value: match[2] })
-    lastIndex = codeRegex.lastIndex
-  }
-
-  if (lastIndex < content.length) {
-    parts.push({ type: 'text', value: content.substring(lastIndex) })
-  }
+  const processed = preprocessFormatting(content)
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-      {parts.map((part, idx) => {
-        if (part.type === 'code') {
-          return <CodeBlock key={idx} language={part.language} code={part.value} />
-        }
-
-        const lines = part.value.split('\n')
-        return (
-          <div key={idx} style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            {lines.map((line, lineIdx) => {
-              if (line.includes('http://') || line.includes('https://')) {
-                if (line.includes('/files/') && line.toLowerCase().includes('.pdf')) {
-                  const urlMatch = line.match(/(https?:\/\/[^\s]+)/)
-                  if (urlMatch) return <PdfDownloadCard key={lineIdx} url={urlMatch[0]} />
-                }
-              }
-
-              const boldSegments = line.split(/(\*\*[^*]+\*\*)/g)
-              return (
-                <p key={lineIdx} style={{ margin: 0, minHeight: line.trim() ? 'auto' : '6px' }}>
-                  {boldSegments.map((seg, segIdx) => {
-                    if (seg.startsWith('**') && seg.endsWith('**')) {
-                      return <strong key={segIdx} style={{ fontWeight: 600, color: '#f8fafc' }}>{seg.slice(2, -2)}</strong>
-                    }
-                    return seg
-                  })}
-                </p>
-              )
-            })}
-          </div>
-        )
-      })}
+    <div style={{ fontSize: '14px', lineHeight: 1.65, color: '#f8fafc' }}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm, remarkMath]}
+        rehypePlugins={[rehypeKatex]}
+        components={{
+          strong({ children }) {
+            return <strong style={{ fontWeight: 600, color: '#ffffff' }}>{children}</strong>
+          },
+          em({ children }) {
+            return <em style={{ fontStyle: 'italic', color: '#cbd5e1' }}>{children}</em>
+          },
+          hr() {
+            return <hr style={{ border: 'none', borderTop: '1px solid rgba(255, 255, 255, 0.08)', margin: '16px 0' }} />
+          },
+          code({ node, inline, className, children, ...props }) {
+            const match = /language-(\w+)/.exec(className || '')
+            const codeString = String(children).replace(/\n$/, '')
+            if (!inline && (match || codeString.includes('\n'))) {
+              return <CodeBlock language={match ? match[1] : ''} code={codeString} />
+            }
+            return (
+              <code
+                style={{
+                  background: 'rgba(255, 255, 255, 0.08)',
+                  padding: '2px 6px',
+                  borderRadius: '4px',
+                  fontSize: '12.5px',
+                  fontFamily: "'JetBrains Mono', monospace",
+                  color: '#c084fc',
+                }}
+                {...props}
+              >
+                {children}
+              </code>
+            )
+          },
+          table({ children }) {
+            return (
+              <div style={{ overflowX: 'auto', margin: '14px 0', borderRadius: '12px', border: '1px solid rgba(255, 255, 255, 0.08)' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', background: 'rgba(255, 255, 255, 0.02)' }}>
+                  {children}
+                </table>
+              </div>
+            )
+          },
+          th({ children }) {
+            return (
+              <th style={{ background: 'rgba(255, 255, 255, 0.06)', color: '#ffffff', fontWeight: 600, textAlign: 'left', padding: '10px 14px', borderBottom: '1px solid rgba(255, 255, 255, 0.1)' }}>
+                {children}
+              </th>
+            )
+          },
+          td({ children }) {
+            return (
+              <td style={{ padding: '10px 14px', borderBottom: '1px solid rgba(255, 255, 255, 0.05)', color: '#cbd5e1', lineHeight: 1.5 }}>
+                {children}
+              </td>
+            )
+          },
+          h1({ children }) {
+            return <h1 style={{ fontSize: '20px', fontWeight: 700, color: '#ffffff', margin: '18px 0 10px 0', letterSpacing: '-0.5px' }}>{children}</h1>
+          },
+          h2({ children }) {
+            return <h2 style={{ fontSize: '17px', fontWeight: 600, color: '#ffffff', margin: '16px 0 8px 0', letterSpacing: '-0.3px' }}>{children}</h2>
+          },
+          h3({ children }) {
+            return <h3 style={{ fontSize: '15px', fontWeight: 600, color: '#c084fc', margin: '14px 0 6px 0' }}>{children}</h3>
+          },
+          h4({ children }) {
+            return <h4 style={{ fontSize: '13.5px', fontWeight: 600, color: '#38bdf8', margin: '12px 0 4px 0' }}>{children}</h4>
+          },
+          ul({ children }) {
+            return <ul style={{ paddingLeft: '20px', margin: '8px 0', display: 'flex', flexDirection: 'column', gap: '4px' }}>{children}</ul>
+          },
+          ol({ children }) {
+            return <ol style={{ paddingLeft: '20px', margin: '8px 0', display: 'flex', flexDirection: 'column', gap: '4px' }}>{children}</ol>
+          },
+          li({ children }) {
+            return <li style={{ margin: '2px 0', lineHeight: 1.6, color: '#e2e8f0' }}>{children}</li>
+          },
+          p({ children }) {
+            return <p style={{ margin: '6px 0', lineHeight: 1.65 }}>{children}</p>
+          },
+          a({ href, children }) {
+            if (href && href.includes('/files/') && href.toLowerCase().endsWith('.pdf')) {
+              return <PdfDownloadCard url={href} />
+            }
+            return (
+              <a href={href} target="_blank" rel="noreferrer" style={{ color: '#38bdf8', textDecoration: 'underline' }}>
+                {children}
+              </a>
+            )
+          },
+          blockquote({ children }) {
+            return (
+              <blockquote style={{ borderLeft: '3px solid #818cf8', paddingLeft: '12px', margin: '10px 0', color: '#94a3b8', fontStyle: 'italic' }}>
+                {children}
+              </blockquote>
+            )
+          },
+        }}
+      >
+        {processed}
+      </ReactMarkdown>
     </div>
   )
 }
@@ -610,5 +653,3 @@ export default function Messages({ messages, loading, onSelectPrompt }) {
     </div>
   )
 }
-
-

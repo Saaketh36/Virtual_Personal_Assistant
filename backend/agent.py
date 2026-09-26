@@ -1,6 +1,7 @@
 import os
 import re
 import json
+import mimetypes
 from dotenv import load_dotenv
 from agno.agent import Agent
 from agno.models.groq import Groq
@@ -12,8 +13,16 @@ from tools.email_tool import (
     reply_to_email,
     search_emails,
     send_email,
+    clean_email_body_plain,
 )
-from tools.pdf_tool import create_topic_pdf, extract_pdf_text, modify_pdf_section, find_replace_in_pdf
+from tools.pdf_tool import (
+    create_topic_pdf,
+    extract_pdf_text,
+    modify_pdf_section,
+    find_replace_in_pdf,
+    PDF_STORAGE_DIR,
+    PDF_OUTPUT_DIR,
+)
 from memory import (
     get_relevant_context,
     get_recent_context,
@@ -22,6 +31,7 @@ from memory import (
     summarize_old_turns,
     save_document_memory,
     get_session_documents,
+    get_relevant_document_context,
     get_latest_session_document,
     get_long_term_memory,
     get_session_uploaded_documents,
@@ -156,12 +166,12 @@ def needs_pdf(user_text: str, pdf_path: str | None = None, session_id: str | Non
 
 def is_vague_followup(user_text: str) -> bool:
     text = user_text.strip().lower()
-    words = re.findall(r"\w+", text)
     followup_markers = [
-        "it", "this", "that", "same", "again", "instead", "previous",
-        "above", "last", "dont", "don't", "make it", "give me",
+        "it", "its", "this", "that", "same", "again", "instead", "previous",
+        "above", "last", "dont", "don't", "make it", "give me", "these", "those",
     ]
-    return len(words) <= 12 or any(marker in text for marker in followup_markers)
+    # Check for word-bounded pronoun references (e.g. "its", "it", "this")
+    return any(re.search(rf"\b{re.escape(m)}\b", text) for m in followup_markers)
 
 
 def is_pdf_style_followup(user_text: str, session_id: str) -> bool:
@@ -172,12 +182,21 @@ def is_pdf_style_followup(user_text: str, session_id: str) -> bool:
 def is_email_write_request(user_text: str) -> bool:
     text = user_text.lower()
     write_keywords = [
-        "send email", "send an email", "email to", "mail to",
-        "write a mail", "write mail",
+        "send email", "send an email", "send the email", "send this email",
+        "send mail", "send a mail", "send the mail", "send this mail",
+        "email to", "mail to", "mail it to", "email it to",
+        "write a mail", "write mail", "write an email", "write email",
         "reply to", "reply to email", "respond to email",
-        "draft email", "draft an email", "compose email",
+        "draft email", "draft an email", "draft a mail", "draft mail",
+        "compose email", "compose a mail", "compose mail",
     ]
-    return any(k in text for k in write_keywords)
+    if any(k in text for k in write_keywords):
+        return True
+    if "@" in text and any(w in text for w in ["mail", "email", "send", "attach"]):
+        return True
+    if ("attach" in text or "send this file" in text or "send this pdf" in text) and ("mail" in text or "email" in text):
+        return True
+    return False
 
 
 def _normalize_email_text(text: str) -> str:
@@ -245,13 +264,21 @@ def is_rejection(text: str) -> bool:
 
 
 def find_referred_pdf(user_text: str, pdf_list: list[dict]) -> dict | None:
-    """Select the correct PDF from the uploaded PDF list based on user reference."""
+    """Select the correct PDF from the uploaded PDF list based on user reference or topic keywords."""
     if not pdf_list:
         return None
 
     text = user_text.lower().strip()
-    
-    # 1. "previous previous" / "second to last"
+
+    # Keyword / topic matching first
+    for item in reversed(pdf_list):
+        fname = (item.get("filename") or "").lower()
+        topic = (item.get("topic") or "").lower()
+        for kw in ["resume", "cv", "outing", "deep learning", "report", "paper", "essay"]:
+            if kw in text and (kw in fname or kw in topic):
+                return item
+
+    # Positional references
     if "previous previous" in text or "second to last" in text or "before the last" in text or "second-to-last" in text:
         if len(pdf_list) >= 3:
             return pdf_list[-3]
@@ -259,13 +286,11 @@ def find_referred_pdf(user_text: str, pdf_list: list[dict]) -> dict | None:
             return pdf_list[-2]
         return pdf_list[0]
 
-    # 2. "previous" / "last" / "before"
     if "previous" in text or "before" in text:
         if len(pdf_list) >= 2:
             return pdf_list[-2]
         return pdf_list[0]
 
-    # Default is the latest one
     return pdf_list[-1]
 
 
@@ -275,26 +300,26 @@ def find_referred_email(user_text: str, email_list: list[dict]) -> tuple[dict | 
         return None, -1
 
     text = user_text.lower().strip()
-    
+
     # 1. "first" / "1st"
     if "first" in text or "1st" in text:
         return email_list[0], 0
-        
+
     # 2. "before that one" / "previous" / "second to last" / "second-to-last"
     if "before that" in text or "previous" in text or "second to last" in text or "second-to-last" in text:
         if len(email_list) >= 2:
             return email_list[-2], len(email_list) - 2
         return email_list[0], 0
-        
+
     # 3. "second" / "2nd"
     if "second" in text or "2nd" in text:
         if len(email_list) >= 2:
             return email_list[1], 1
-            
+
     # 4. Default approval keywords or "last"
     if is_approval(user_text) or any(k in text for k in ["send it", "send this", "go ahead", "mail it", "last"]):
         return email_list[-1], len(email_list) - 1
-        
+
     # Generic "send email" command
     if "send" in text and ("email" in text or "mail" in text):
         return email_list[-1], len(email_list) - 1
@@ -302,7 +327,264 @@ def find_referred_email(user_text: str, email_list: list[dict]) -> tuple[dict | 
     return None, -1
 
 
-def parse_direct_email_request(user_text: str) -> dict | None:
+def analyze_requested_detail(user_text: str, context: str = "") -> dict:
+    """
+    Intelligently evaluate the user's requested level of detail, depth, and scope.
+    Applies globally across all agent capabilities and tasks.
+    """
+    text = user_text.lower()
+
+    # 1. Concise / Short patterns
+    concise_patterns = [
+        r"\b(?:in\s+)?simple\s+terms\b",
+        r"\b(?:in\s+)?simple\s+words\b",
+        r"\b(?:in\s+)?simple\s+language\b",
+        r"\b(?:keep\s+it\s+)?simple\b",
+        r"\bsimply\s+explain\b",
+        r"\bexplain\s+simply\b",
+        r"\bbrief\b",
+        r"\bbriefly\b",
+        r"\bin\s+brief\b",
+        r"\bshort\b",
+        r"\bshortly\b",
+        r"\bin\s+short\b",
+        r"\bquick\b",
+        r"\bquickly\b",
+        r"\bconcise\b",
+        r"\bconcisely\b",
+        r"\btldr\b",
+        r"\btl;dr\b",
+        r"\bin\s+a\s+nutshell\b",
+        r"\bin\s+(?:one|1)\s+sentence\b",
+        r"\bin\s+(?:one|1)\s+paragraph\b",
+        r"\bhigh\s*level\b",
+        r"\b2-3\s+lines?\b",
+        r"\bfew\s+words\b",
+        r"\bjust\s+the\s+answer\b",
+        r"\bquick\s+overview\b",
+    ]
+    wants_concise = any(re.search(p, text) for p in concise_patterns)
+
+    # 2. Detailed / In-Depth / Comprehensive patterns
+    detailed_patterns = [
+        r"\bin\s+detail\b",
+        r"\bdetailed\b",
+        r"\bcomprehensiv(?:e|ely)\b",
+        r"\bdeep\s*dive\b",
+        r"\bin[\s-]depth\b",
+        r"\bstep[\s-]by[\s-]step\b",
+        r"\bthorough(?:ly)?\b",
+        r"\bextensive(?:ly)?\b",
+        r"\bcomplete\s+guide\b",
+        r"\bcomplete\s+breakdown\b",
+        r"\bfrom\s+basics\b",
+        r"\bfrom\s+scratch\b",
+        r"\bfrom\s+the\s+ground\s+up\b",
+        r"\bexplain\s+everything\b",
+        r"\bwalk\s+me\s+through\b",
+        r"\belaborate\b",
+        r"\bfull\s+explanation\b",
+        r"\ball\s+aspects\b",
+    ]
+    wants_detailed = any(re.search(p, text) for p in detailed_patterns)
+
+    aspect_keywords = [
+        "basics", "architecture", "workflow", "components", "pipeline", "mechanisms",
+        "embeddings", "vector databases", "retrieval", "generation", "example",
+        "pros and cons", "trade-offs", "advantages", "disadvantages", "implementation",
+        "best practices"
+    ]
+    matched_aspects = [k for k in aspect_keywords if k in text]
+
+    if len(matched_aspects) >= 3:
+        wants_detailed = True
+
+    if wants_concise and wants_detailed:
+        wants_concise = False
+        wants_detailed = False
+
+    has_large_user_input = len(user_text.strip().split()) > 75 or len(user_text.strip()) > 500
+    has_large_context = len(context.strip()) > 1500
+
+    if wants_concise:
+        mode = "concise"
+        guidance = (
+            "THE USER REQUESTS A CONCISE / SIMPLE RESPONSE:\n"
+            "- Deliver a focused, direct, and straightforward answer without unnecessary jargon, fluff, or excessive preambles.\n"
+            "- Explain the core concepts clearly in plain terms in 1 to 2 crisp paragraphs or a few tight bullet points.\n"
+            "- Do NOT artificially inflate the response with unwanted history, unprompted tangents, or excessive boilerplate."
+        )
+    elif wants_detailed:
+        mode = "detailed"
+        specifics = f" (explicitly covering: {', '.join(matched_aspects)})" if matched_aspects else ""
+        guidance = (
+            f"THE USER REQUESTS A COMPREHENSIVE, IN-DEPTH RESPONSE{specifics}:\n"
+            "- Provide an extensive, deep, and well-structured answer covering EVERY requested aspect, component, workflow, and example in detail.\n"
+            "- Organize with clear Markdown section headings (e.g. ### 1. Basics, ### 2. Architecture & Workflow, etc.).\n"
+            "- Provide thorough explanations, concrete real-world examples, and architectural clarity.\n"
+            "- Do NOT cut corners, over-abbreviate, or leave out requested components."
+        )
+    elif has_large_user_input or has_large_context:
+        mode = "context_rich"
+        guidance = (
+            "THE REQUEST CONTAINS SUBSTANTIAL CONTEXT AND SPECIFIC REQUIREMENTS:\n"
+            "- Thoroughly review and preserve all key facts, constraints, and instructions provided in the context.\n"
+            "- Do not unnecessarily discard or summarize away crucial specific requirements or data points."
+        )
+    else:
+        mode = "balanced"
+        guidance = (
+            "NATURAL ADAPTIVE SCOPE:\n"
+            "- The user provided a standard query. Provide a direct, balanced, and complete response that matches the question's natural scope—informative without being bloated, and concise without omitting necessary substance."
+        )
+
+    return {
+        "mode": mode,
+        "guidance": guidance,
+        "wants_concise": wants_concise,
+        "wants_detailed": wants_detailed,
+    }
+
+
+ATTACHMENT_KEYWORDS_RE = re.compile(
+    r"\b(?:attach|attaching|attached|attachment|with\s+(?:the\s+)?attachment|send\s+(?:this\s+)?(?:file|pdf|document))\b",
+    re.IGNORECASE
+)
+
+
+def detect_attachment_intent(user_text: str) -> tuple[bool, str]:
+    """
+    Distinguish between explicitly wanting to ATTACH a file vs merely MENTIONING it.
+    Returns (wants_attachment, file_hint).
+    """
+    text = user_text.lower()
+    has_attach = bool(ATTACHMENT_KEYWORDS_RE.search(text))
+
+    file_hint = ""
+    for kw in ["resume", "cv", "pdf", "document", "file", "report", "paper", "presentation", "sheet"]:
+        if kw in text:
+            file_hint = kw
+            break
+
+    fn_match = re.search(r"\b([A-Za-z0-9_.-]+\.(?:pdf|txt|docx|csv|json))\b", text)
+    if fn_match:
+        file_hint = fn_match.group(1)
+
+    return has_attach, file_hint
+
+
+def resolve_session_attachment(
+    session_id: str,
+    file_hint: str = "",
+    current_pdf_path: str | None = None,
+    current_pdf_filename: str | None = None,
+    db_docs: list[dict] | None = None,
+) -> tuple[dict | None, str | None]:
+    """
+    Resolve the actual binary file from current turn upload, session PDF history, or database.
+    Verifies that the file exists on disk and is non-empty.
+    Returns (attachment_dict, error_message).
+    """
+    candidates = []
+
+    # 1. Current request PDF upload
+    if current_pdf_path and os.path.isfile(current_pdf_path) and os.path.getsize(current_pdf_path) > 0:
+        candidates.append({
+            "path": current_pdf_path,
+            "filename": current_pdf_filename or os.path.basename(current_pdf_path),
+        })
+
+    # 2. Session PDF history in memory (newest first)
+    session_list = SESSION_PDFS.get(session_id, [])
+    if isinstance(session_list, list):
+        for item in reversed(session_list):
+            if isinstance(item, dict) and item.get("path") and os.path.isfile(item["path"]) and os.path.getsize(item["path"]) > 0:
+                if not any(c["path"] == item["path"] for c in candidates):
+                    candidates.append(item)
+
+    # 3. DB document records for this session
+    if db_docs and isinstance(db_docs, list):
+        for item in reversed(db_docs):
+            if isinstance(item, dict) and item.get("path") and os.path.isfile(item["path"]) and os.path.getsize(item["path"]) > 0:
+                if not any(c["path"] == item["path"] for c in candidates):
+                    candidates.append(item)
+
+    session_candidates = list(candidates)
+
+    fallback_candidates = []
+    for storage_dir in [PDF_STORAGE_DIR, PDF_OUTPUT_DIR]:
+        if storage_dir.exists():
+            files = sorted(storage_dir.glob("*.pdf"), key=os.path.getmtime, reverse=True)
+            for f in files:
+                if f.is_file() and f.stat().st_size > 0:
+                    fallback_candidates.append({
+                        "path": str(f),
+                        "filename": f.name,
+                    })
+
+    hint = file_hint.lower().strip()
+    is_generic_hint = not hint or hint in {"file", "pdf", "document", "this", "it", "my"}
+    selected = None
+
+    if not is_generic_hint:
+        # Match specific hint in session candidates first
+        for cand in session_candidates:
+            fname = cand.get("filename", "").lower()
+            fpath = cand.get("path", "").lower()
+            topic = cand.get("topic", "").lower()
+            if hint in fname or hint in fpath or hint in topic:
+                selected = cand
+                break
+
+        # Fallback to disk storage only if candidate strictly matches user's specific hint
+        if not selected:
+            for cand in fallback_candidates:
+                fname = cand.get("filename", "").lower()
+                fpath = cand.get("path", "").lower()
+                topic = cand.get("topic", "").lower()
+                if hint in fname or hint in fpath or hint in topic:
+                    selected = cand
+                    break
+    else:
+        # For generic hints ("this file", "this pdf"), only take the active session document
+        if session_candidates:
+            selected = session_candidates[0]
+
+    if not selected:
+        target_name = file_hint if file_hint and file_hint not in {"file", "pdf", "document", "this", "it", "my"} else "requested file"
+        return None, (
+            f"I noticed you asked to attach your {target_name}, but I could not find or access that file in this session. "
+            "Please upload your file using the attachment button (paperclip) in the chat, and I will attach it to your email."
+        )
+
+    try:
+        with open(selected["path"], "rb") as f:
+            content = f.read()
+
+        raw_filename = selected.get("filename") or os.path.basename(selected["path"])
+        clean_name = re.sub(r"^[a-f0-9]{32}_", "", raw_filename)
+        ctype, _ = mimetypes.guess_type(clean_name)
+        if not ctype:
+            ctype = "application/pdf" if clean_name.lower().endswith(".pdf") else "application/octet-stream"
+
+        return {
+            "filename": clean_name,
+            "path": selected["path"],
+            "content": content,
+            "content_type": ctype,
+            "size": len(content),
+        }, None
+    except Exception as exc:
+        return None, f"Could not read attachment file: {exc}"
+
+
+def parse_direct_email_request(
+    user_text: str,
+    session_id: str = "",
+    current_pdf_path: str | None = None,
+    current_pdf_filename: str | None = None,
+    db_docs: list[dict] | None = None,
+) -> dict | None:
     """Parse straightforward send/draft commands without relying on tool calling."""
     text = _normalize_email_text(user_text.strip())
     lowered = text.lower()
@@ -368,38 +650,74 @@ def parse_direct_email_request(user_text: str) -> dict | None:
         if body_match:
             body = body_match.group(1).strip(" .\n\t\"'")
 
+    # Detect attachment intent vs mentioning
+    wants_attachment, file_hint = detect_attachment_intent(text)
+    attachments = []
+    if wants_attachment:
+        resolved_att, err_msg = resolve_session_attachment(
+            session_id=session_id,
+            file_hint=file_hint,
+            current_pdf_path=current_pdf_path,
+            current_pdf_filename=current_pdf_filename,
+            db_docs=db_docs,
+        )
+        if not resolved_att:
+            target_name = file_hint if file_hint and file_hint not in {"file", "pdf", "document", "this", "it"} else "requested file"
+            return {
+                "error": (
+                    f"I noticed you asked to attach your {target_name}, but I could not find or access that file in this session. "
+                    "Please upload your file using the attachment button (paperclip) in the chat, and I will attach it to your email."
+                )
+            }
+        attachments = [resolved_att]
+
     return {
-        "action": "draft" if "draft" in lowered or "compose" in lowered else "send",
+        "action": "draft" if any(k in lowered for k in ["draft", "compose", "save"]) else "send",
         "to": to_email,
         "cc": cc_email,
         "bcc": bcc_email,
         "subject": subject,
         "body": body,
         "instructions": body or after_email or text,
+        "attachments": attachments,
     }
 
 
 async def compose_email_subject_and_body(email_request: dict, context: str = "") -> dict:
-    """Generate a polished subject/body for a pending email."""
+    """Generate a polished, clean subject/body for a pending email without raw asterisks."""
     if email_request.get("subject") and email_request.get("body"):
         return {
             "subject": email_request["subject"],
-            "body": email_request["body"],
+            "body": clean_email_body_plain(email_request["body"]),
         }
 
     prompt = (
-        "Write a concise, ready-to-send email based on the user's request.\n"
+        "Write a beautifully polished, professional email based on the user's request.\n"
         "Return exactly this format:\n"
         "Subject: <subject>\n"
         "Body:\n"
         "<email body>\n\n"
-        "Keep it professional and natural. Do not mention that you are an AI.\n\n"
+        "CRITICAL CONTENT & WRITING RULES:\n"
+        "- Write naturally, warmly, and professionally as a human. Do not mention that you are an AI.\n"
+        "- ABSOLUTELY DO NOT use markdown bolding ('**') anywhere in the email body. Emails must never contain raw asterisks or markdown code syntax.\n"
+        "- For section headings, use clean capitalization with a colon on its own line (for example, 'Education:' or 'Technical Skills:', NEVER '**Education**').\n"
+        "- For bullet points, use a standard dash '-' with clean natural text.\n"
+        "- THOROUGH CONTEXT & DETAIL INCORPORATION:\n"
+        "  If the user asks to mention or highlight specific details about an attached file, their background, projects, skills, or specific points (e.g. 'mention that it contains my academic background, technical skills, and AI/ML projects' or asks to highlight specific experience), you MUST actively and thoroughly include those details in the email body! NEVER output a generic one-liner like 'Please find my resume attached' when the user supplied specific points to mention.\n"
+        "- ADAPTIVE LENGTH & DETAIL: Match the email length to the user's intent. If the user asks for a brief note, be concise while still covering the requested items. If the user lists multiple items or the provided document context contains relevant details, structure the email with clean paragraphs or sections covering those points.\n"
+        "- DO NOT write 'Attachment: [filename]' or fake attachment text in the email body itself, because the file will be attached as a real binary file attachment to the email payload.\n"
+        "- Ensure paragraphs are separated by clean blank lines and there is a professional sign-off.\n\n"
         f"Recipient: {email_request['to']}\n"
         f"Existing subject, if any: {email_request.get('subject') or '(none)'}\n"
         f"User request/instructions: {email_request.get('instructions') or '(none)'}\n"
     )
+    detail_info = analyze_requested_detail(email_request.get("instructions", "") or email_request.get("body", ""))
+    prompt += f"\nDETAIL & SCOPE GUIDANCE:\n{detail_info['guidance']}\n"
+    if email_request.get("attachments"):
+        att_names = ", ".join(a["filename"] for a in email_request["attachments"])
+        prompt += f"Attached file(s): {att_names}\n"
     if context:
-        prompt += f"\nRelevant memory/context:\n{context}\n"
+        prompt += f"\nRelevant document and memory context:\n{context}\n"
 
     writer = Agent(model=llama_model, markdown=False)
     result = await writer.arun(prompt)
@@ -414,34 +732,52 @@ async def compose_email_subject_and_body(email_request: dict, context: str = "")
     body = email_request.get("body") or (
         body_match.group(1).strip() if body_match else content
     )
+    body = clean_email_body_plain(body)
 
     return {"subject": subject, "body": body}
 
 
 def format_pending_email(email_request: dict) -> str:
     action = "save this draft" if email_request["action"] == "draft" else "send this email"
-    cc_line = f"Cc: {email_request['cc']}\n" if email_request.get("cc") else ""
-    bcc_line = f"Bcc: {email_request['bcc']}\n" if email_request.get("bcc") else ""
+    cc_line = f"**Cc:** `{email_request['cc']}`\n" if email_request.get("cc") else ""
+    bcc_line = f"**Bcc:** `{email_request['bcc']}`\n" if email_request.get("bcc") else ""
+
+    attachment_line = ""
+    attachments = email_request.get("attachments") or []
+    if attachments:
+        att_details = []
+        for a in attachments:
+            size_kb = max(1, round(a.get("size", 0) / 1024)) if a.get("size") else None
+            size_str = f" ({size_kb} KB)" if size_kb else ""
+            att_details.append(f"📎 `{a['filename']}`{size_str}")
+        attachment_line = f"**Attachment:** {', '.join(att_details)}\n"
+
+    clean_body = clean_email_body_plain(email_request.get("body", ""))
     return (
-        f"Here is the email I prepared. Should I {action}?\n\n"
-        f"To: {email_request['to']}\n"
+        f"Here is the email draft I prepared. Should I {action}?\n\n"
+        f"**To:** `{email_request['to']}`\n"
         f"{cc_line}"
         f"{bcc_line}"
-        f"Subject: {email_request['subject']}\n\n"
-        f"{email_request['body']}\n\n"
-        "Reply with \"send it\" to approve, or \"cancel\" to discard."
+        f"**Subject:** {email_request['subject']}\n"
+        f"{attachment_line}"
+        f"---\n\n"
+        f"{clean_body}\n\n"
+        f"---\n\n"
+        "Reply with **\"send it\"** to approve and send via Gmail, or **\"cancel\"** to discard."
     )
 
 
 def format_email_action_result(action: str, result: dict) -> str:
     if not result.get("success"):
         return f"Gmail action failed: {result.get('error', 'Unknown error')}"
+    atts = result.get("attachments") or []
+    att_str = f" with attachment(s): {', '.join(atts)}" if atts else ""
     if action == "send":
-        return f"Email sent to Gmail successfully. Message ID: {result.get('message_id')}"
+        return f"Email sent successfully via Gmail{att_str}. Message ID: {result.get('message_id')}"
     if action == "reply":
         return f"Reply sent through Gmail successfully. Message ID: {result.get('message_id')}"
     if action == "draft":
-        return f"Draft saved in Gmail successfully. Draft ID: {result.get('draft_id')}"
+        return f"Draft saved in Gmail successfully{att_str}. Draft ID: {result.get('draft_id')}"
     return result.get("message", "Gmail action completed successfully.")
 
 
@@ -902,9 +1238,16 @@ async def handle_pdf_request(
 
     if has_summary_trigger or not has_extract_trigger:
         summarizer = Agent(model=llama_model, markdown=False)
+        pdf_detail = analyze_requested_detail(user_text)
+        if pdf_detail["wants_concise"]:
+            length_guide = "Provide a concise, direct summary in 1 to 2 crisp paragraphs or tight bullet points covering key takeaways."
+        elif pdf_detail["wants_detailed"]:
+            length_guide = "Provide an extensive, comprehensive, and structured breakdown covering all sections, background, methodology, key findings, and conclusions in detail."
+        else:
+            length_guide = "Summarize this PDF clearly. Include the main points, important details, and any action items or conclusions if present."
+
         summary_prompt = (
-            "Summarize this PDF clearly and concisely. Include the main points, important details, "
-            "and any action items or conclusions if present.\n\n"
+            f"{length_guide}\n\n"
             f"PDF: {pdf_filename or 'uploaded document'}\n"
             f"Pages: {extraction['page_count']}\n\n"
             f"{extraction['text']}"
@@ -944,6 +1287,7 @@ async def generate_reply(
     session_id: str,
     pdf_path: str | None = None,
     pdf_filename: str | None = None,
+    enable_web: bool | None = None,
 ) -> str:
     from tools.web_search import web_search_called
     web_search_called.set(False)
@@ -986,6 +1330,15 @@ async def generate_reply(
         if extraction.get("success") and extraction.get("text"):
             label = active_filename or "uploaded document"
             document_context = f"[Document: {label}]\n{extraction['text'][:12000]}"
+
+    # Vector similarity search over all document memory chunks (works across sessions and within session)
+    if not is_vague_followup(user_text) or not document_context:
+        relevant_doc_chunks = await get_relevant_document_context(user_text, session_id)
+        if relevant_doc_chunks:
+            if document_context:
+                document_context = f"{document_context}\n\nRelevant Document Chunks (Vector Search):\n{relevant_doc_chunks}"
+            else:
+                document_context = f"Relevant Document Content (Vector Search):\n{relevant_doc_chunks}"
 
     # Retrieve recent conversation turns within the session
     recent_context = await get_recent_context(session_id)
@@ -1033,6 +1386,7 @@ async def generate_reply(
             elif is_draft_confirm and not is_send_confirm:
                 final_action = "draft"
 
+            attachments = email_to_action.get("attachments") or None
             if final_action == "draft":
                 result = draft_email(
                     email_to_action["to"],
@@ -1040,6 +1394,7 @@ async def generate_reply(
                     email_to_action["body"],
                     cc=email_to_action.get("cc"),
                     bcc=email_to_action.get("bcc"),
+                    attachments=attachments,
                 )
                 reply = format_email_action_result("draft", result)
             else:
@@ -1049,6 +1404,7 @@ async def generate_reply(
                     email_to_action["body"],
                     cc=email_to_action.get("cc"),
                     bcc=email_to_action.get("bcc"),
+                    attachments=attachments,
                 )
                 reply = format_email_action_result("send", result)
 
@@ -1063,7 +1419,44 @@ async def generate_reply(
         await save_conversation(user_text, reply, session_id)
         return reply
 
-    direct_email = parse_direct_email_request(user_text)
+    # Check if user wants to attach a file or update an existing pending email
+    wants_attach_check, file_hint_check = detect_attachment_intent(user_text)
+    if pending_emails and (wants_attach_check or any(k in user_text.lower() for k in ["mention", "add my", "include my", "update", "change subject", "change body"])):
+        target_pending = pending_emails[-1]
+        if wants_attach_check:
+            resolved_att, err_msg = resolve_session_attachment(
+                session_id=session_id,
+                file_hint=file_hint_check,
+                current_pdf_path=pdf_path,
+                current_pdf_filename=pdf_filename,
+                db_docs=SESSION_PDFS.get(session_id, []),
+            )
+            if not resolved_att:
+                target_name = file_hint_check if file_hint_check and file_hint_check not in {"file", "pdf", "document", "this", "it"} else "requested file"
+                reply = (
+                    f"I noticed you asked to attach your {target_name}, but I could not find or access that file in this session. "
+                    "Please upload your file using the attachment button (paperclip) in the chat, and I will attach it to your email."
+                )
+                await save_conversation(user_text, reply, session_id)
+                return reply
+            target_pending["attachments"] = [resolved_att]
+
+        if any(k in user_text.lower() for k in ["mention", "include", "saying", "contain", "with", "add"]):
+            target_pending["instructions"] = f"{target_pending.get('instructions', '')}\nUser added instructions: {user_text}"
+            composed = await compose_email_subject_and_body(target_pending, context)
+            target_pending.update(composed)
+
+        reply = format_pending_email(target_pending)
+        await save_conversation(user_text, reply, session_id)
+        return reply
+
+    direct_email = parse_direct_email_request(
+        user_text,
+        session_id=session_id,
+        current_pdf_path=pdf_path,
+        current_pdf_filename=pdf_filename,
+        db_docs=SESSION_PDFS.get(session_id, []),
+    )
     if direct_email:
         if direct_email.get("error"):
             reply = direct_email["error"]
@@ -1087,24 +1480,37 @@ async def generate_reply(
     # 2. Route to the right model
     model = pick_model(user_text)
 
-    # 3. Build system prompt
-    system_message = (
-        "You are a helpful personal AI assistant running locally.\n\n"
-        "RULES:\n"
-        "1. For math, general knowledge, reasoning, or anything you already know — "
-        "answer directly in plain English.\n"
-        "2. Be concise and direct.\n"
-        "3. Use recent conversation to resolve follow-up messages like 'it', 'this', "
-        "'same', or formatting changes.\n"
-        "4. Treat long-term memory as background only; do not summarize or discuss it "
-        "unless the user asks about previous conversation.\n\n"
-    )
-    if context:
-        system_message += f"Context:\n{context}\n"
+    # 3. Dynamic requested detail evaluation
+    detail_info = analyze_requested_detail(user_text, context)
 
-    # 4. Build and run agent — attach tools based on query type
+    # 4. Build system prompt with anti-hallucination, grounding, and adaptive detail rules
+    system_message = (
+        "You are Nexus, a helpful, precise, and strictly grounded personal AI assistant.\n\n"
+        "CORE RULES & GROUNDING:\n"
+        "1. GROUNDING & HONESTY: For questions regarding personal user information, stored facts, or contents of uploaded documents/PDFs, answer ONLY using the provided context/memory. If the required information is NOT present in the provided context or memory, explicitly and clearly state: 'I don't have that information in my memory/context' or explain that the information is unavailable. DO NOT guess, fabricate, assume, or invent fake facts, user details, dates, or document contents.\n"
+        "2. ADAPTIVE RESPONSE DETAIL & SCOPE:\n"
+        "   - Intelligently calibrate response length, depth, and structure based on what the user asks and how much information they provide.\n"
+        "   - SHORT / CONCISE: If the user asks for something short, brief, or in simple terms (e.g. 'Explain RAG in simple terms'), provide a crisp, concise, high-impact answer without unnecessary filler or excessive preambles.\n"
+        "   - COMPREHENSIVE / DETAILED: If the user asks for a detailed, in-depth, or multi-faceted explanation covering multiple topics or components (e.g. 'Explain RAG from basics, architecture, workflow, components, embeddings, vector databases, retrieval, generation, and give an example'), provide an exhaustive, structured explanation covering every requested aspect, concept, and component in depth.\n"
+        "   - RESPECT CONTEXT: If the user provides a large amount of context or detailed specifications, preserve and address all important facts, data points, and constraints without unnecessarily discarding them.\n"
+        "   - MINIMAL CONTEXT: If the user provides very little information or a brief prompt, do NOT artificially generate a huge response unless the task genuinely requires it.\n"
+        "   - DO NOT use a fixed response length or fixed verbosity for every request. Adapt naturally across all tasks: explanations, code, summaries, emails, documents, analysis, search results, recommendations, and planning.\n"
+        "   - For math calculations, state the final result clearly in plain numbers without unprompted raw LaTeX commands.\n"
+        "3. INTENT ALIGNMENT: Analyze the user's LATEST message carefully. If the user asks a NEW, distinct query, answer THAT current query directly without repeating past responses or irrelevant previous tool results.\n"
+        "4. CONTEXT SCOPING: Use previous conversation context only when relevant to resolving references or follow-up questions (e.g. pronouns like 'it', 'this', 'its'). Do not mix unrelated memories from prior conversations into the response.\n"
+        "5. CLEAN WRITING STYLE & FORMATTING:\n"
+        "   - Write with high clarity, elegance, and natural flow. Avoid visual clutter.\n"
+        "   - AVOID EXCESSIVE ASTERISKS: Do not litter responses or summaries with double asterisks '**' on every label, key, or bullet point. Only use bolding sparingly for vital emphasis.\n"
+        "   - Use clean Markdown headers (e.g. '### Overview') and well-spaced paragraphs instead of pseudo-bold header lines.\n"
+        "   - For emails, letters, and drafts: ABSOLUTELY NEVER use raw markdown symbols (do not use '**', '###', '---', or backticks). Write natural, human-formatted professional correspondence.\n\n"
+    )
+    system_message += f"ADAPTIVE DETAIL DIRECTIVE FOR THIS REQUEST:\n{detail_info['guidance']}\n\n"
+    if context:
+        system_message += f"CONVERSATION HISTORY & BACKGROUND CONTEXT:\n{context}\n\n"
+
+    # 5. Build and run agent — attach tools based on query type
     text = user_text.lower()
-    has_search_trigger = should_search(user_text)
+    has_search_trigger = should_search(user_text) if enable_web is None else (enable_web and should_search(user_text))
     has_email_trigger = needs_email(user_text)
 
     if has_search_trigger:
@@ -1123,15 +1529,38 @@ async def generate_reply(
                 "Tell the user search failed and answer only if the answer is available from non-current knowledge.\n"
             )
 
+    # Prepare session-aware attachment for tool calling fallback
+    session_attachment = None
+    if wants_attach_check:
+        session_attachment, _ = resolve_session_attachment(
+            session_id=session_id,
+            file_hint=file_hint_check,
+            current_pdf_path=pdf_path,
+            current_pdf_filename=pdf_filename,
+            db_docs=SESSION_PDFS.get(session_id, []),
+        )
+
+    def send_email_with_attachments(to: str, subject: str, body: str, cc: str = None, bcc: str = None):
+        """Send an email to a recipient via Gmail API with attachments if requested."""
+        atts = [session_attachment] if session_attachment else None
+        return send_email(to=to, subject=subject, body=body, cc=cc, bcc=bcc, attachments=atts)
+
+    def draft_email_with_attachments(to: str, subject: str, body: str, cc: str = None, bcc: str = None):
+        """Save an email draft in Gmail with attachments if requested."""
+        atts = [session_attachment] if session_attachment else None
+        return draft_email(to=to, subject=subject, body=body, cc=cc, bcc=bcc, attachments=atts)
+
     tools = []
     if has_email_trigger:
-        tools += [send_email, read_inbox, search_emails, reply_to_email, draft_email]
+        tools += [send_email_with_attachments, read_inbox, search_emails, reply_to_email, draft_email_with_attachments]
 
     if has_email_trigger:
         system_message += (
             "\nEMAIL RULES:\n"
-            "- When asked to send an email, use send_email(to, subject, body). "
-            "Generate a professional body if the user only gave a brief description.\n"
+            "- When asked to send or draft an email, write a polished, professional email body.\n"
+            "- STRICT: DO NOT use markdown bolding '**' or markdown headings in email bodies. "
+            "Emails must be clean plain text or natural prose without raw asterisks or markup.\n"
+            "- Use clean section labels (e.g. 'Education:' or 'Technical Skills:') and clean bullet points (- or •).\n"
             "- When asked to read/check inbox, use read_inbox() then summarize results clearly.\n"
             "- When asked to search emails, use search_emails(query) with Gmail query syntax.\n"
             "- When asked to reply, use reply_to_email(thread_id, message_id, to, subject, body).\n"

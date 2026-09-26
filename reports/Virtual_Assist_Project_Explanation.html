@@ -1,0 +1,1201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Virtual Assist — Complete Project Explanation</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+  :root {
+    --bg: #0a0b10;
+    --surface: #12131a;
+    --surface2: #1a1b25;
+    --border: #2a2b38;
+    --text: #e4e5ed;
+    --text-muted: #8b8d9e;
+    --accent: #7c5cfc;
+    --accent-light: #9b82ff;
+    --accent-glow: rgba(124, 92, 252, 0.15);
+    --green: #34d399;
+    --blue: #60a5fa;
+    --orange: #fbbf24;
+    --red: #f87171;
+    --pink: #f472b6;
+    --cyan: #22d3ee;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Inter', -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.75;
+    font-size: 15px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ── Print Styles ─────────────────────────────── */
+  @media print {
+    body { background: #fff; color: #1a1a2e; font-size: 11pt; line-height: 1.5; }
+    .hero { background: #1a1a2e !important; page-break-after: always; }
+    .hero h1 { font-size: 28pt; }
+    .container { max-width: 100%; padding: 0 20px; }
+    section { page-break-inside: avoid; }
+    .toc { page-break-after: always; }
+    pre, .code-block { background: #f3f4f6 !important; color: #1a1a2e !important; border: 1px solid #ddd; }
+    .callout { border-left-color: #1a1a2e; background: #f8f9fa; }
+    table { font-size: 10pt; }
+    th { background: #e5e7eb !important; color: #1a1a2e !important; }
+    td { background: #fff !important; }
+    .section-number { color: #4338ca; }
+    h2 { color: #1a1a2e; border-bottom-color: #ddd; }
+    h3 { color: #1a1a2e; }
+    a { color: #4338ca; }
+  }
+
+  /* ── Hero Section ─────────────────────────────── */
+  .hero {
+    background: linear-gradient(135deg, #0f0c29 0%, #1a1040 40%, #24243e 100%);
+    padding: 80px 40px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+    border-bottom: 1px solid var(--border);
+  }
+  .hero::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(circle at 30% 50%, rgba(124,92,252,0.08) 0%, transparent 50%),
+                radial-gradient(circle at 70% 50%, rgba(96,165,250,0.06) 0%, transparent 50%);
+    animation: heroGlow 8s ease-in-out infinite alternate;
+  }
+  @keyframes heroGlow {
+    0% { transform: translate(0, 0); }
+    100% { transform: translate(-20px, 10px); }
+  }
+  .hero h1 {
+    font-size: 48px;
+    font-weight: 900;
+    background: linear-gradient(135deg, #fff, var(--accent-light), var(--blue));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 16px;
+    position: relative;
+    letter-spacing: -1px;
+  }
+  .hero .subtitle {
+    font-size: 20px;
+    color: var(--text-muted);
+    font-weight: 300;
+    position: relative;
+    max-width: 600px;
+    margin: 0 auto;
+  }
+  .hero .badge {
+    display: inline-block;
+    background: var(--accent-glow);
+    border: 1px solid rgba(124,92,252,0.3);
+    color: var(--accent-light);
+    padding: 6px 18px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 500;
+    margin-top: 24px;
+    position: relative;
+  }
+
+  /* ── Container ────────────────────────────────── */
+  .container {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 40px 32px 80px;
+  }
+
+  /* ── Table of Contents ────────────────────────── */
+  .toc {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 32px;
+    margin-bottom: 48px;
+  }
+  .toc h2 {
+    font-size: 20px;
+    font-weight: 700;
+    margin-bottom: 20px;
+    color: var(--accent-light);
+    border: none;
+    padding: 0;
+  }
+  .toc ol {
+    padding-left: 24px;
+    columns: 2;
+    column-gap: 32px;
+  }
+  .toc li {
+    margin-bottom: 8px;
+    break-inside: avoid;
+  }
+  .toc a {
+    color: var(--text);
+    text-decoration: none;
+    font-weight: 400;
+    transition: color 0.2s;
+  }
+  .toc a:hover { color: var(--accent-light); }
+
+  /* ── Sections ─────────────────────────────────── */
+  section { margin-bottom: 56px; }
+
+  .section-number {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--accent);
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    display: block;
+    margin-bottom: 8px;
+  }
+
+  h2 {
+    font-size: 28px;
+    font-weight: 800;
+    color: var(--text);
+    margin-bottom: 24px;
+    padding-bottom: 12px;
+    border-bottom: 2px solid var(--border);
+    letter-spacing: -0.5px;
+  }
+
+  h3 {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--accent-light);
+    margin: 32px 0 14px;
+  }
+
+  h4 {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--blue);
+    margin: 24px 0 10px;
+  }
+
+  p { margin-bottom: 16px; color: var(--text); }
+
+  a { color: var(--accent-light); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  strong { font-weight: 600; color: #fff; }
+
+  ul, ol { padding-left: 24px; margin-bottom: 16px; }
+  li { margin-bottom: 6px; }
+
+  /* ── Tables ───────────────────────────────────── */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0 24px;
+    font-size: 14px;
+    border-radius: 12px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+  }
+  th {
+    background: var(--surface2);
+    color: var(--accent-light);
+    font-weight: 600;
+    text-align: left;
+    padding: 12px 16px;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 2px solid var(--border);
+  }
+  td {
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    vertical-align: top;
+  }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: var(--surface2); }
+
+  /* ── Code Blocks ──────────────────────────────── */
+  pre, .code-block {
+    background: #0d0e14;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    margin: 16px 0 24px;
+    overflow-x: auto;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    line-height: 1.6;
+    color: #c9d1d9;
+  }
+  code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    background: var(--surface2);
+    padding: 2px 7px;
+    border-radius: 5px;
+    color: var(--accent-light);
+  }
+  pre code { background: none; padding: 0; color: inherit; }
+
+  .kw { color: #ff7b72; }
+  .str { color: #a5d6ff; }
+  .cm { color: #8b949e; font-style: italic; }
+  .fn { color: #d2a8ff; }
+  .num { color: #79c0ff; }
+
+  /* ── Callouts ─────────────────────────────────── */
+  .callout {
+    background: var(--surface);
+    border-left: 4px solid var(--accent);
+    border-radius: 0 12px 12px 0;
+    padding: 18px 24px;
+    margin: 20px 0;
+    font-size: 14px;
+  }
+  .callout.tip { border-left-color: var(--green); }
+  .callout.warning { border-left-color: var(--orange); }
+  .callout.danger { border-left-color: var(--red); }
+  .callout.info { border-left-color: var(--blue); }
+  .callout-title {
+    font-weight: 700;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 6px;
+  }
+  .callout.tip .callout-title { color: var(--green); }
+  .callout.warning .callout-title { color: var(--orange); }
+  .callout.danger .callout-title { color: var(--red); }
+  .callout.info .callout-title { color: var(--blue); }
+
+  /* ── Flow Diagrams (ASCII art) ────────────────── */
+  .flow-diagram {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    margin: 20px 0;
+    text-align: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    line-height: 1.8;
+    overflow-x: auto;
+    white-space: pre;
+  }
+
+  /* ── Architecture Cards ───────────────────────── */
+  .arch-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 16px;
+    margin: 20px 0;
+  }
+  .arch-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    transition: border-color 0.2s, transform 0.2s;
+  }
+  .arch-card:hover {
+    border-color: var(--accent);
+    transform: translateY(-2px);
+  }
+  .arch-card .icon {
+    font-size: 28px;
+    margin-bottom: 8px;
+  }
+  .arch-card .card-title {
+    font-weight: 700;
+    font-size: 15px;
+    margin-bottom: 4px;
+    color: #fff;
+  }
+  .arch-card .card-desc {
+    font-size: 13px;
+    color: var(--text-muted);
+    line-height: 1.5;
+  }
+  .arch-card .card-port {
+    display: inline-block;
+    background: var(--accent-glow);
+    color: var(--accent-light);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    padding: 2px 10px;
+    border-radius: 10px;
+    margin-top: 8px;
+  }
+
+  /* ── File Tree ────────────────────────────────── */
+  .file-tree {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px 24px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    line-height: 1.8;
+    margin: 16px 0;
+    color: var(--text-muted);
+  }
+  .file-tree .dir { color: var(--blue); font-weight: 600; }
+  .file-tree .file { color: var(--text); }
+  .file-tree .desc { color: var(--text-muted); font-style: italic; }
+
+  /* ── Feature table highlight ──────────────────── */
+  .feature-row td:first-child { font-weight: 600; color: var(--text); white-space: nowrap; }
+
+  /* ── Separator ────────────────────────────────── */
+  hr {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 40px 0;
+  }
+
+  /* ── Footer ───────────────────────────────────── */
+  .footer {
+    text-align: center;
+    padding: 40px;
+    color: var(--text-muted);
+    font-size: 13px;
+    border-top: 1px solid var(--border);
+  }
+
+  .inline-tag {
+    display: inline-block;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    padding: 1px 8px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--cyan);
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════════════ HERO -->
+<div class="hero">
+  <h1>🧠 Virtual Assist</h1>
+  <p class="subtitle">A Complete Beginner's Deep-Dive into Every Corner of the Project</p>
+  <div class="badge">Full-Stack AI Personal Assistant &bull; React + FastAPI + Groq + PostgreSQL</div>
+</div>
+
+<div class="container">
+
+<!-- ═══════════════════════════════════════════════════════════ TOC -->
+<div class="toc">
+  <h2>📑 Table of Contents</h2>
+  <ol>
+    <li><a href="#s1">The Big Picture — What Does This App Do?</a></li>
+    <li><a href="#s2">Architecture — How The Pieces Fit Together</a></li>
+    <li><a href="#s3">Frontend — The User Interface</a></li>
+    <li><a href="#s4">Backend — The Brain</a></li>
+    <li><a href="#s5">The Agent — The Decision Maker</a></li>
+    <li><a href="#s6">Memory System — How It Remembers</a></li>
+    <li><a href="#s7">Embeddings — Understanding Meaning</a></li>
+    <li><a href="#s8">Tools — Web Search, Email, PDF</a></li>
+    <li><a href="#s9">Voice — Speech ↔ Text</a></li>
+    <li><a href="#s10">Gmail Integration</a></li>
+    <li><a href="#s11">PDF System</a></li>
+    <li><a href="#s12">Web Search</a></li>
+    <li><a href="#s13">Database</a></li>
+    <li><a href="#s14">Configuration &amp; Environment</a></li>
+    <li><a href="#s15">End-to-End Message Flow</a></li>
+    <li><a href="#s16">File-by-File Breakdown</a></li>
+    <li><a href="#s17">External Services &amp; Dependencies</a></li>
+  </ol>
+</div>
+
+<!-- ═══════════════════════════════════════════════════ SECTION 1 -->
+<section id="s1">
+  <span class="section-number">Section 01</span>
+  <h2>🎯 The Big Picture — What Does This App Do?</h2>
+
+  <p>Imagine you have a super-smart assistant sitting on your computer. You can talk to it in text or voice, and it can do all sorts of things for you. It's like your own private ChatGPT, but running on <strong>your own machine</strong>, with extra superpowers.</p>
+
+  <p>The project is split into two halves:</p>
+  <ul>
+    <li><strong>Frontend</strong> (what you see in the browser) — built with <strong>React + Vite</strong></li>
+    <li><strong>Backend</strong> (the brain that does the thinking) — built with <strong>Python + FastAPI</strong></li>
+  </ul>
+
+  <h3>What Can It Do?</h3>
+  <table>
+    <thead><tr><th>You do this…</th><th>The assistant does this…</th></tr></thead>
+    <tbody class="feature-row">
+      <tr><td>Type "What's the weather today?"</td><td>Searches the web using Serper and gives you a real, current answer</td></tr>
+      <tr><td>"Send email to john@gmail.com about the meeting"</td><td>Drafts the email, shows a preview, sends it when you approve</td></tr>
+      <tr><td>Upload a PDF resume</td><td>Reads it, summarizes it, can edit specific text inside it</td></tr>
+      <tr><td>"Create a PDF about machine learning"</td><td>Writes a full document with sections & headings, generates a downloadable PDF</td></tr>
+      <tr><td>Speak into your microphone</td><td>Converts speech → text, generates reply, speaks it back to you</td></tr>
+      <tr><td>"What did I tell you yesterday about my project?"</td><td>Searches long-term memory and recalls what you said</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ═══════════════════════════════════════════════════ SECTION 2 -->
+<section id="s2">
+  <span class="section-number">Section 02</span>
+  <h2>🏗️ Architecture — How The Pieces Fit Together</h2>
+
+  <p>The project is made up of <strong>10+ components</strong> that all talk to each other. Here's a visual overview:</p>
+
+  <div class="flow-diagram">
+        👤 You (Browser)
+             │
+             ▼
+    ┌──────────────────────┐
+    │  ⚛️  React Frontend   │  localhost:5173
+    │  (Vite dev server)   │
+    └──────────┬───────────┘
+               │  HTTP requests (fetch)
+               ▼
+    ┌──────────────────────┐      ┌───────────────────┐
+    │  🐍 FastAPI Backend   │─────▶│ 🎤 Whisper Service │  localhost:8001
+    │  (main.py)           │      │ (speech → text)    │
+    │  localhost:8000       │      └───────────────────┘
+    └──┬───┬───┬───┬───┬───┘
+       │   │   │   │   │
+       │   │   │   │   └──▶ 🔊 Piper TTS (text → speech, local exe)
+       │   │   │   │
+       │   │   │   └──────▶ 📄 PyMuPDF (PDF read/create/edit)
+       │   │   │
+       │   │   └──────────▶ 📧 Gmail API (read/send/draft emails)
+       │   │
+       │   └──────────────▶ 🔍 Serper API (Google search results)
+       │
+       └──────────────────▶ ☁️  Groq Cloud (AI language models)
+
+    🧠 Sentence-Transformers (local embeddings, inside backend)
+    🗄️  PostgreSQL + pgvector (database, localhost:5432)
+  </div>
+
+  <h3>Component Summary</h3>
+  <div class="arch-grid">
+    <div class="arch-card">
+      <div class="icon">⚛️</div>
+      <div class="card-title">React Frontend</div>
+      <div class="card-desc">The chat interface you see in the browser. Built with React 19 + Vite.</div>
+      <div class="card-port">localhost:5173</div>
+    </div>
+    <div class="arch-card">
+      <div class="icon">🐍</div>
+      <div class="card-title">FastAPI Backend</div>
+      <div class="card-desc">Python server that receives messages and orchestrates everything.</div>
+      <div class="card-port">localhost:8000</div>
+    </div>
+    <div class="arch-card">
+      <div class="icon">🎤</div>
+      <div class="card-title">Whisper Service</div>
+      <div class="card-desc">Separate Python server that converts audio recordings → text.</div>
+      <div class="card-port">localhost:8001</div>
+    </div>
+    <div class="arch-card">
+      <div class="icon">🧠</div>
+      <div class="card-title">Sentence Transformers</div>
+      <div class="card-desc">Local ML model that converts text → numbers (embeddings) for memory search.</div>
+      <div class="card-port">In-process</div>
+    </div>
+    <div class="arch-card">
+      <div class="icon">🗄️</div>
+      <div class="card-title">PostgreSQL + pgvector</div>
+      <div class="card-desc">Database that stores conversations and can search by semantic meaning.</div>
+      <div class="card-port">localhost:5432</div>
+    </div>
+    <div class="arch-card">
+      <div class="icon">☁️</div>
+      <div class="card-title">Groq Cloud API</div>
+      <div class="card-desc">Cloud service that runs the actual AI language model (like GPT).</div>
+      <div class="card-port">api.groq.com</div>
+    </div>
+    <div class="arch-card">
+      <div class="icon">🔍</div>
+      <div class="card-title">Serper API</div>
+      <div class="card-desc">Service that lets the AI search Google for real-time results.</div>
+      <div class="card-port">serper.dev</div>
+    </div>
+    <div class="arch-card">
+      <div class="icon">📧</div>
+      <div class="card-title">Gmail API</div>
+      <div class="card-desc">Google's official API for reading, sending, and drafting emails.</div>
+      <div class="card-port">googleapis.com</div>
+    </div>
+    <div class="arch-card">
+      <div class="icon">🔊</div>
+      <div class="card-title">Piper TTS</div>
+      <div class="card-desc">Local program that converts text → spoken WAV audio.</div>
+      <div class="card-port">Local exe</div>
+    </div>
+    <div class="arch-card">
+      <div class="icon">📄</div>
+      <div class="card-title">PyMuPDF</div>
+      <div class="card-desc">Python library for reading, creating, and editing PDF files.</div>
+      <div class="card-port">In-process</div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════ SECTION 3 -->
+<section id="s3">
+  <span class="section-number">Section 03</span>
+  <h2>⚛️ Frontend — The User Interface</h2>
+
+  <p>The frontend is what you see when you open <code>http://localhost:5173</code>. It's built with <strong>React 19</strong>, <strong>Vite</strong>, and <strong>TailwindCSS</strong>.</p>
+
+  <h3>Frontend Components</h3>
+  <table>
+    <thead><tr><th>File</th><th>What It Does</th></tr></thead>
+    <tbody>
+      <tr><td><code>App.jsx</code></td><td><strong>The Command Center</strong> — manages all state (sessions, messages, loading), handles API calls to the backend, coordinates all other components.</td></tr>
+      <tr><td><code>Sidebar.jsx</code></td><td><strong>Left Panel</strong> — shows session list, "New Chat" button, quick-access buttons for Gmail, Voice, Command Palette.</td></tr>
+      <tr><td><code>Topbar.jsx</code></td><td><strong>Header</strong> — hamburger menu, session name, email button with unread badge, export button.</td></tr>
+      <tr><td><code>Messages.jsx</code></td><td><strong>Chat Area</strong> — renders user/agent messages with markdown, code blocks, PDF download cards, math formulas, search badges.</td></tr>
+      <tr><td><code>InputBar.jsx</code></td><td><strong>Message Input</strong> — text field, PDF attachment button (📎), microphone button (🎤), send button.</td></tr>
+      <tr><td><code>EmailPanel.jsx</code></td><td><strong>Gmail Panel</strong> — slide-in panel for inbox, search, read, reply, compose, with OAuth connection.</td></tr>
+      <tr><td><code>CommandPalette.jsx</code></td><td><strong>Ctrl+K Spotlight</strong> — macOS-style quick action search (New Chat, Gmail, Voice, Export, Clear).</td></tr>
+      <tr><td><code>VoiceModal.jsx</code></td><td><strong>Voice Mode</strong> — full-screen modal with mic button, animated feedback, auto-plays AI audio response.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>How <code>App.jsx</code> Works (The Heart of the Frontend)</h3>
+  <p>This file manages all the "state" — think of state as the app's memory at any given moment:</p>
+  <ul>
+    <li><code>sidebarOpen</code> — Is the left sidebar visible?</li>
+    <li><code>emailPanelOpen</code> — Is the Gmail panel showing?</li>
+    <li><code>sessions</code> — List of all your chat conversations</li>
+    <li><code>activeSession</code> — Which session you're currently in</li>
+    <li><code>messages</code> — All chat messages in the current session</li>
+    <li><code>loading</code> — Is the AI currently thinking?</li>
+  </ul>
+
+  <h4>Key Functions:</h4>
+  <ul>
+    <li><strong><code>sendMessage(text, attachment)</code></strong> — When you press Enter: adds your message to chat → sends to <code>POST /chat</code> (or <code>/chat-pdf</code> if PDF attached) → waits for reply → adds reply to chat</li>
+    <li><strong><code>handleVoiceReply(data)</code></strong> — After voice input: shows transcript → shows reply → plays audio</li>
+    <li><strong><code>loadSessions()</code></strong> — Fetches all past sessions from the backend database on app load</li>
+    <li><strong><code>loadSessionMessages(sessionId)</code></strong> — When you click a session, loads its full message history</li>
+    <li><strong><code>exportChat()</code></strong> — Downloads current conversation as a Markdown file</li>
+  </ul>
+
+  <div class="callout info">
+    <div class="callout-title">💡 Keyboard Shortcuts</div>
+    <strong>Ctrl+K</strong> — Open Command Palette &nbsp; | &nbsp; <strong>Ctrl+B</strong> — Toggle Sidebar
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════ SECTION 4 -->
+<section id="s4">
+  <span class="section-number">Section 04</span>
+  <h2>🐍 Backend — The Brain</h2>
+
+  <p>The backend is a Python <strong>FastAPI</strong> server. FastAPI is a modern web framework that lets you create API endpoints (URLs) the frontend calls.</p>
+
+  <h3><code>main.py</code> — The API Gateway</h3>
+  <p>This is the <strong>entry point</strong>. Think of it as the <strong>reception desk</strong> — every request from the frontend comes here first.</p>
+
+  <h4>API Endpoints:</h4>
+  <table>
+    <thead><tr><th>Endpoint</th><th>Method</th><th>What It Does</th></tr></thead>
+    <tbody>
+      <tr><td><code>GET /</code></td><td>GET</td><td>Health check — returns "VPA backend running"</td></tr>
+      <tr><td><code>GET /sessions</code></td><td>GET</td><td>Returns list of all conversation sessions</td></tr>
+      <tr><td><code>GET /sessions/{id}/messages</code></td><td>GET</td><td>Returns chat history for a specific session</td></tr>
+      <tr><td><code>DELETE /sessions/{id}</code></td><td>DELETE</td><td>Deletes a session and all its data</td></tr>
+      <tr><td><code>POST /chat</code></td><td>POST</td><td><strong>The main one</strong> — text message in, AI reply out</td></tr>
+      <tr><td><code>POST /chat-voice</code></td><td>POST</td><td>Same as /chat but also generates spoken audio reply</td></tr>
+      <tr><td><code>POST /chat-voice-input</code></td><td>POST</td><td>Audio file in → transcribe → AI reply → audio out</td></tr>
+      <tr><td><code>POST /chat-pdf</code></td><td>POST</td><td>Message + optional PDF file for PDF operations</td></tr>
+    </tbody>
+  </table>
+
+  <h4>How <code>POST /chat</code> works:</h4>
+  <div class="flow-diagram">
+Frontend sends: { message: "Hello", session_id: "default" }
+                    ↓
+           main.py receives it
+                    ↓
+   Calls generate_reply("Hello", "default") from agent.py
+                    ↓
+   Returns: { reply: "Hi!", used_search: false, model: "Groq" }
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════ SECTION 5 -->
+<section id="s5">
+  <span class="section-number">Section 05</span>
+  <h2>🤖 The Agent — The Decision Maker</h2>
+
+  <p><code>agent.py</code> is the <strong>most complex and important file</strong> (~1,180 lines). It's the "brain" that decides what to do with your message.</p>
+
+  <h3>Intent Detection — How It Understands You</h3>
+  <p>The agent uses <strong>keyword matching</strong> to figure out what you want:</p>
+
+  <table>
+    <thead><tr><th>Keyword List</th><th>Example Triggers</th><th>Action</th></tr></thead>
+    <tbody>
+      <tr><td><code>CODE_KEYWORDS</code></td><td>"code", "python", "debug", "fix this"</td><td>Uses code-specialized model (Qwen)</td></tr>
+      <tr><td><code>SEARCH_KEYWORDS</code></td><td>"latest", "today", "weather", "who won"</td><td>Triggers web search via Serper</td></tr>
+      <tr><td><code>EMAIL_KEYWORDS</code></td><td>"send email", "inbox", "check email"</td><td>Routes to email handling</td></tr>
+      <tr><td><code>PDF_KEYWORDS</code></td><td>"pdf", "summarize pdf", "modify pdf"</td><td>Routes to PDF handling</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Two AI Models</h3>
+  <table>
+    <thead><tr><th>Model</th><th>Used For</th></tr></thead>
+    <tbody>
+      <tr><td><code>openai/gpt-oss-120b</code> (primary)</td><td>General chat, reasoning, email writing, PDF content generation</td></tr>
+      <tr><td><code>qwen/qwen3.8-27b</code> (code)</td><td>Code-related questions, debugging, script writing</td></tr>
+    </tbody>
+  </table>
+
+  <h3>The <code>generate_reply()</code> Pipeline — Step by Step</h3>
+  <p>This is the <strong>heart of the entire system</strong>. When you send any message, this is what happens:</p>
+
+  <div class="flow-diagram">
+1. 📝 User sends message
+       ↓
+2. 🔄 Reset search/email flags
+       ↓
+3. 📎 PDF attached? → Save to disk & memory
+       ↓
+4. 🔍 CONTEXT RETRIEVAL:
+   ├─ Get document context (uploaded PDFs in this session)
+   ├─ Get recent conversation (last 4 turns)
+   ├─ Get long-term memory (cross-session facts)
+   └─ Get relevant memory (vector similarity search)
+       ↓
+5. 🛤️ ROUTING:
+   ├─ Pending email approval? → Send/discard email
+   ├─ New email request? → Parse, draft, show preview
+   ├─ PDF request? → Create/edit/summarize PDF
+   └─ Normal chat → Pick model, optionally web search
+       ↓
+6. 🤖 Call Groq AI model via Agno framework
+       ↓
+7. 💾 Save exchange to memory (PostgreSQL + embedding)
+       ↓
+8. 📊 10+ turns? → Summarize old turns to save space
+       ↓
+9. 📤 Return reply to frontend
+  </div>
+
+  <h3>Email Approval Flow</h3>
+  <p>When you say "send email to john@example.com saying hello", the agent <strong>doesn't send immediately</strong>:</p>
+  <ol>
+    <li><strong>Parses</strong> your request: extracts <code>to</code>, <code>subject</code>, <code>body</code>, <code>cc</code>, <code>bcc</code></li>
+    <li><strong>Uses AI</strong> to generate a professional subject &amp; body if you only gave a brief instruction</li>
+    <li><strong>Shows preview</strong>: "Here is the email I prepared. Should I send it?"</li>
+    <li><strong>Waits</strong> for your approval ("send it") or rejection ("cancel")</li>
+    <li>Only <strong>then</strong> sends via Gmail API</li>
+  </ol>
+</section>
+
+<!-- ═══════════════════════════════════════════════════ SECTION 6 -->
+<section id="s6">
+  <span class="section-number">Section 06</span>
+  <h2>💾 Memory System — How It Remembers</h2>
+
+  <p><code>memory.py</code> (~853 lines) gives the AI <strong>persistent memory</strong> — it remembers things across conversations, not just within one chat.</p>
+
+  <h3>Three Types of Memory</h3>
+  <table>
+    <thead><tr><th>Type</th><th>Scope</th><th>What It Stores</th><th>Example</th></tr></thead>
+    <tbody>
+      <tr><td><span class="inline-tag">conversation</span></td><td>Within a session</td><td>Every chat exchange</td><td>"User asked about Python, Agent explained…"</td></tr>
+      <tr><td><span class="inline-tag">document</span></td><td>Within a session</td><td>Uploaded PDF content, chunked</td><td>"Page 1 of resume.pdf: Name: John Doe…"</td></tr>
+      <tr><td><span class="inline-tag">long_term</span></td><td>Across ALL sessions</td><td>User preferences &amp; facts</td><td>"User prefers dark mode"</td></tr>
+    </tbody>
+  </table>
+
+  <h3>How Vector Search Works (The Magic)</h3>
+  <p>The memory system doesn't just store text — it stores text <strong>AND</strong> a numerical representation of its meaning (an "embedding"). This lets it search by <strong>meaning</strong>, not just exact words.</p>
+
+  <div class="callout tip">
+    <div class="callout-title">✨ Example</div>
+    <p>You said: "I love playing cricket on weekends" → stored with its embedding</p>
+    <p>Later, you ask: "What are my hobbies?"</p>
+    <p>The system finds the cricket message because "hobbies" and "playing cricket" have <strong>similar meanings</strong> in vector space!</p>
+  </div>
+
+  <h3>Key Memory Functions</h3>
+  <table>
+    <thead><tr><th>Function</th><th>What It Does</th></tr></thead>
+    <tbody>
+      <tr><td><code>save_conversation()</code></td><td>Saves a chat exchange with its embedding</td></tr>
+      <tr><td><code>get_recent_context()</code></td><td>Gets the last 4 messages (short-term context)</td></tr>
+      <tr><td><code>get_relevant_context()</code></td><td>Vector search — finds similar past messages</td></tr>
+      <tr><td><code>get_long_term_memory()</code></td><td>Vector search across ALL sessions</td></tr>
+      <tr><td><code>save_document_memory()</code></td><td>Chunks PDF text &amp; stores each chunk with embedding</td></tr>
+      <tr><td><code>summarize_old_turns()</code></td><td>After 10+ turns, summarizes oldest 5 into one entry</td></tr>
+      <tr><td><code>list_sessions()</code></td><td>Returns all sessions for the sidebar</td></tr>
+      <tr><td><code>delete_session()</code></td><td>Deletes all data for a session</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Rolling Summary — Keeping Memory Manageable</h3>
+  <p>After 10 raw conversation turns in a session:</p>
+  <ol>
+    <li>Take the <strong>oldest 5 messages</strong></li>
+    <li>Ask the AI to <strong>summarize them</strong> into 2–3 sentences</li>
+    <li><strong>Delete</strong> the original 5 messages</li>
+    <li><strong>Store</strong> the summary with its own embedding</li>
+  </ol>
+  <p>This way, old conversations are remembered in compressed form.</p>
+
+  <h3>Text Chunking — How Documents Are Stored</h3>
+  <p>A long PDF is split into <strong>overlapping chunks</strong> of 1,000 characters (with 150 char overlap). This ensures vector search is accurate and nothing at chunk boundaries is lost.</p>
+
+  <div class="callout info">
+    <div class="callout-title">🛡️ Graceful Degradation</div>
+    Every memory function is wrapped in try/except. If PostgreSQL is down, functions return safe defaults (<code>""</code>, <code>[]</code>) instead of crashing. You can still chat — you just won't have memory.
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════ SECTION 7 -->
+<section id="s7">
+  <span class="section-number">Section 07</span>
+  <h2>🔢 Embeddings — Turning Words into Numbers</h2>
+
+  <p><code>embedding.py</code> is a small but critical file. It converts text into <strong>768-dimensional vectors</strong> (lists of 768 numbers).</p>
+
+  <h3>What Are Embeddings?</h3>
+  <p>Imagine representing every sentence as a <strong>point in space</strong>. Similar meanings = close points. Different meanings = far apart.</p>
+
+  <pre><code>"I love dogs"            → [0.23, -0.45, 0.67, 0.12, ...]  <span class="cm">(768 numbers)</span>
+"I adore puppies"        → [0.25, -0.43, 0.65, 0.14, ...]  <span class="cm">(very similar!)</span>
+"The stock market fell"  → [-0.56, 0.78, -0.12, 0.34, ...] <span class="cm">(very different!)</span></code></pre>
+
+  <p>The project uses <strong>sentence-transformers</strong> with the <code>all-mpnet-base-v2</code> model. It runs <strong>locally</strong> — no internet needed.</p>
+
+  <div class="callout tip">
+    <div class="callout-title">🔄 Fallback</div>
+    If sentence-transformers isn't installed, a hash-based fallback creates crude embeddings. Not as accurate, but the app won't crash.
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════ SECTION 8 -->
+<section id="s8">
+  <span class="section-number">Section 08</span>
+  <h2>🔧 Tools — The Agent's Superpowers</h2>
+
+  <p>The agent has three "tool" modules in <code>backend/tools/</code> that extend its capabilities:</p>
+
+  <h3>1. <code>web_search.py</code> — Google Search</h3>
+  <p>Uses the <strong>Serper API</strong> to get Google search results. When the agent detects search-related keywords, it calls Serper, gets top 5 results, and injects them into the AI's context. A <code>ContextVar</code> flag tracks whether search was used so the frontend can show a "Powered by web search" badge.</p>
+
+  <h3>2. <code>email_tool.py</code> — Gmail Operations</h3>
+  <table>
+    <thead><tr><th>Function</th><th>What It Does</th></tr></thead>
+    <tbody>
+      <tr><td><code>send_email()</code></td><td>Sends email via Gmail API, supports CC/BCC and file attachments</td></tr>
+      <tr><td><code>read_inbox()</code></td><td>Fetches latest inbox emails with sender, subject, date, snippet</td></tr>
+      <tr><td><code>get_email_detail()</code></td><td>Gets full body of a specific email (decodes MIME)</td></tr>
+      <tr><td><code>search_emails()</code></td><td>Searches Gmail using query syntax (<code>from:amazon@amazon.com</code>)</td></tr>
+      <tr><td><code>reply_to_email()</code></td><td>Replies within an email thread</td></tr>
+      <tr><td><code>draft_email()</code></td><td>Saves as draft without sending</td></tr>
+      <tr><td><code>mark_as_read()</code></td><td>Removes UNREAD label</td></tr>
+      <tr><td><code>get_unread_count()</code></td><td>Returns unread email count</td></tr>
+    </tbody>
+  </table>
+
+  <h3>3. <code>pdf_tool.py</code> — PDF Processing (761 lines!)</h3>
+  <table>
+    <thead><tr><th>Function</th><th>What It Does</th></tr></thead>
+    <tbody>
+      <tr><td><code>save_uploaded_pdf()</code></td><td>Saves uploaded PDF with unique filename to <code>storage/pdfs/</code></td></tr>
+      <tr><td><code>extract_pdf_text()</code></td><td>Extracts text from all pages (up to 30,000 chars)</td></tr>
+      <tr><td><code>create_topic_pdf()</code></td><td>Generates a beautifully formatted PDF from scratch — with title, accent lines, section headings, proper pagination, headers/footers</td></tr>
+      <tr><td><code>modify_pdf_section()</code></td><td>Replaces content under a specific section heading</td></tr>
+      <tr><td><code>find_replace_in_pdf()</code></td><td>Finds and replaces text preserving original font, size, and color</td></tr>
+      <tr><td><code>validate_pdf_file()</code></td><td>Checks if a generated PDF is valid and readable</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ═══════════════════════════════════════════════════ SECTION 9 -->
+<section id="s9">
+  <span class="section-number">Section 09</span>
+  <h2>🎤 Voice — Speech ↔ Text</h2>
+
+  <h3>Speech → Text: <code>whisper_service.py</code></h3>
+  <p>A <strong>separate FastAPI server</strong> on port 8001 using <strong>Faster-Whisper</strong> (a fast C++ implementation of OpenAI's Whisper).</p>
+  <ul>
+    <li>Model: <code>large-v3-turbo</code> (accurate but fast)</li>
+    <li>Runs on CPU with int8 quantization (no GPU needed)</li>
+    <li>Voice Activity Detection (VAD) enabled to skip silence</li>
+  </ul>
+
+  <div class="flow-diagram">
+Browser records audio (WebM)
+        ↓
+POST /chat-voice-input → main.py
+        ↓
+Forwards audio to POST localhost:8001/transcribe
+        ↓
+Whisper model runs → returns transcript
+        ↓
+generate_reply(transcript) → AI response
+        ↓
+Piper TTS → synthesize(reply) → WAV audio bytes
+        ↓
+Return { transcript, reply, audio (base64) }
+        ↓
+Frontend plays audio + shows messages
+  </div>
+
+  <h3>Text → Speech: <code>tts.py</code></h3>
+  <p>Uses <strong>Piper</strong>, a local neural TTS engine. It runs Piper as a subprocess, pipes text in, and gets a WAV file out. The WAV bytes are base64-encoded and sent to the frontend which plays them.</p>
+</section>
+
+<!-- ═══════════════════════════════════════════════════ SECTION 10 -->
+<section id="s10">
+  <span class="section-number">Section 10</span>
+  <h2>📧 Gmail Integration</h2>
+
+  <h3>OAuth Flow: <code>gmail_auth.py</code></h3>
+  <p>Handles the complex OAuth2 authentication with Google:</p>
+  <ol>
+    <li>User clicks "Connect Gmail" in the frontend</li>
+    <li>Frontend calls <code>GET /email/auth</code></li>
+    <li>Backend starts a temporary local web server on a random port</li>
+    <li>Returns a Google consent URL → user is redirected to Google login</li>
+    <li>User grants permission for Gmail access</li>
+    <li>Google redirects back to the temp server with an auth code</li>
+    <li>Backend exchanges the code for an <strong>access token</strong></li>
+    <li>Token saved to <code>backend/token.json</code></li>
+    <li>All future Gmail calls use this token</li>
+  </ol>
+
+  <h3>Email Routes: <code>email_routes.py</code></h3>
+  <p>A FastAPI router providing REST endpoints for the EmailPanel component:</p>
+  <table>
+    <thead><tr><th>Endpoint</th><th>What It Does</th></tr></thead>
+    <tbody>
+      <tr><td><code>GET /email/status</code></td><td>Auth status, email address, unread count</td></tr>
+      <tr><td><code>GET /email/auth</code></td><td>Starts OAuth, returns Google consent URL</td></tr>
+      <tr><td><code>GET /email/inbox</code></td><td>Returns latest inbox emails</td></tr>
+      <tr><td><code>GET /email/message/{id}</code></td><td>Returns full email content</td></tr>
+      <tr><td><code>POST /email/send</code></td><td>Sends email (supports attachments up to 25MB)</td></tr>
+      <tr><td><code>POST /email/reply</code></td><td>Replies to a thread</td></tr>
+      <tr><td><code>POST /email/draft</code></td><td>Saves a draft</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ═══════════════════════════════════════════════════ SECTION 11 -->
+<section id="s11">
+  <span class="section-number">Section 11</span>
+  <h2>📄 PDF System</h2>
+
+  <h3>PDF Creation Flow</h3>
+  <p>When you say "Create a PDF about machine learning":</p>
+  <div class="flow-diagram">
+1. agent.py detects PDF create intent (regex match)
+                ↓
+2. Is it long-form? (essay, 1500 words, etc.)
+   ├─ YES: Generate outline (5-6 sections) via AI
+   │       For each section, generate ~250 words via AI
+   │       Combine all sections
+   └─ NO:  Generate full document via single AI call
+                ↓
+3. pdf_tool.create_topic_pdf(topic, body)
+                ↓
+4. Parse body into blocks (headings, paragraphs, bullets)
+                ↓
+5. Render page by page:
+   • A4 size, professional margins
+   • Bold title + accent underline
+   • Section headings with accent marks
+   • Word-wrapped prose with inline bold
+   • Auto-pagination when content overflows
+   • Headers (title + page number) on continuation pages
+   • "Virtual Assist" branded footer
+                ↓
+6. Save to backend/storage/generated/
+                ↓
+7. Return download URL: http://localhost:8000/files/filename.pdf
+  </div>
+
+  <h3>PDF Find/Replace — How Style Is Preserved</h3>
+  <p>When you say "Change 'John' to 'Jane'":</p>
+  <ol>
+    <li>Search all pages for the text "John"</li>
+    <li>Find the original span — capture its <strong>font name, font size, and color</strong></li>
+    <li>Redact the old text (draw a white rectangle over it)</li>
+    <li>Insert the new text at the <strong>exact same position</strong> with the <strong>same font/size/color</strong></li>
+    <li>If direct match fails, an <strong>LLM fallback</strong> reads the PDF text and finds the closest matching text</li>
+  </ol>
+</section>
+
+<!-- ═══════════════════════════════════════════════════ SECTION 12 -->
+<section id="s12">
+  <span class="section-number">Section 12</span>
+  <h2>🔍 Web Search</h2>
+
+  <p>When the agent detects a query needs real-time information:</p>
+  <ol>
+    <li><strong>Detection</strong>: Keywords like "latest", "current", "weather", "who won", or questions ending with <code>?</code></li>
+    <li><strong>Search</strong>: Calls the Serper API with the query</li>
+    <li><strong>Results</strong>: Gets answer box + top 5 Google results (title, snippet, link)</li>
+    <li><strong>Injection</strong>: Adds results to the AI's system prompt</li>
+    <li><strong>Response</strong>: AI uses these fresh results to answer accurately</li>
+  </ol>
+</section>
+
+<!-- ═══════════════════════════════════════════════════ SECTION 13 -->
+<section id="s13">
+  <span class="section-number">Section 13</span>
+  <h2>🗄️ Database</h2>
+
+  <h3>PostgreSQL + pgvector</h3>
+  <p>Database: <code>vpa_db</code> &nbsp; | &nbsp; Connection: <code>postgresql://postgres:postgres@localhost:5432/vpa_db</code></p>
+
+  <h3>The <code>conversations</code> Table</h3>
+  <p>There's only <strong>one table</strong>, but it serves multiple purposes via the <code>memory_type</code> column:</p>
+
+  <pre><code><span class="kw">CREATE TABLE</span> conversations (
+    id            <span class="fn">uuid</span> PRIMARY KEY DEFAULT gen_random_uuid(),
+    session_id    <span class="fn">text</span> NOT NULL,         <span class="cm">-- Which session this belongs to</span>
+    role          <span class="fn">text</span> NOT NULL,         <span class="cm">-- 'exchange', 'summary', 'document_chunk', 'fact'</span>
+    content       <span class="fn">text</span> NOT NULL,         <span class="cm">-- The actual text content</span>
+    summary       <span class="fn">text</span>,                  <span class="cm">-- Summary (only for summarized old turns)</span>
+    embedding     <span class="fn">vector</span> NOT NULL,       <span class="cm">-- 768-dim vector embedding</span>
+    source        <span class="fn">text</span>,                  <span class="cm">-- Origin: 'chat', 'pdf_upload', 'long_term'</span>
+    memory_type   <span class="fn">text</span> NOT NULL DEFAULT <span class="str">'conversation'</span>,
+    file_path     <span class="fn">text</span>,                  <span class="cm">-- Path to associated file</span>
+    created_at    <span class="fn">timestamptz</span> NOT NULL DEFAULT now()
+);</code></pre>
+
+  <h3>Vector Search Query</h3>
+  <p>The <code>&lt;=&gt;</code> operator computes <strong>cosine distance</strong> between vectors:</p>
+  <pre><code><span class="cm">-- Find the 4 most similar past conversations</span>
+<span class="kw">SELECT</span> content, <span class="num">1</span> - (embedding <span class="kw">&lt;=&gt;</span> $1::<span class="fn">vector</span>) <span class="kw">AS</span> similarity
+<span class="kw">FROM</span> conversations
+<span class="kw">WHERE</span> session_id = $2 <span class="kw">AND</span> memory_type = <span class="str">'conversation'</span>
+<span class="kw">ORDER BY</span> embedding <span class="kw">&lt;=&gt;</span> $1::<span class="fn">vector</span>
+<span class="kw">LIMIT</span> <span class="num">4</span></code></pre>
+
+  <div class="callout info">
+    <div class="callout-title">🔄 Auto-Migration</div>
+    The <code>_ensure_schema()</code> function automatically creates tables, adds missing columns, creates indexes, and detects embedding dimension mismatches (truncates table if model changes).
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════ SECTION 14 -->
+<section id="s14">
+  <span class="section-number">Section 14</span>
+  <h2>⚙️ Configuration &amp; Environment</h2>
+
+  <h3><code>backend/.env</code></h3>
+  <table>
+    <thead><tr><th>Variable</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td><code>DATABASE_URL</code></td><td>PostgreSQL connection string</td></tr>
+      <tr><td><code>GROQ_API_KEY</code></td><td>API key for Groq cloud (runs the AI models)</td></tr>
+      <tr><td><code>GROQ_MODEL</code></td><td>Primary AI model name (<code>openai/gpt-oss-120b</code>)</td></tr>
+      <tr><td><code>GROQ_CODE_MODEL</code></td><td>Code-specialized model (<code>qwen/qwen3.8-27b</code>)</td></tr>
+      <tr><td><code>SERPER_API_KEY</code></td><td>API key for Google search via Serper</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Other Config Files</h3>
+  <table>
+    <thead><tr><th>File</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td><code>credentials.json</code></td><td>Google OAuth credentials (from Google Cloud Console)</td></tr>
+      <tr><td><code>token.json</code></td><td>Gmail access token (auto-generated after OAuth)</td></tr>
+      <tr><td><code>requirements.txt</code></td><td>Python dependencies (18 packages)</td></tr>
+      <tr><td><code>package.json</code></td><td>JavaScript dependencies (React, Vite, TailwindCSS, etc.)</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout danger">
+    <div class="callout-title">⚠️ Security</div>
+    API keys, <code>credentials.json</code>, and <code>token.json</code> should <strong>never</strong> be committed to Git. They are excluded by <code>.gitignore</code>.
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════ SECTION 15 -->
+<section id="s15">
+  <span class="section-number">Section 15</span>
+  <h2>🔄 End-to-End Message Flow</h2>
+
+  <p>Let's trace <strong>exactly</strong> what happens when you type: <strong>"What's the latest news about AI?"</strong></p>
+
+  <div class="flow-diagram">
+1. 🖱️ You press Enter in the InputBar
+
+2. ⚛️ Frontend (App.jsx → sendMessage):
+   • Creates user message bubble (right side)
+   • Sets loading = true → shows typing indicator
+   • fetch("http://localhost:8000/chat", {
+       method: "POST",
+       body: { message: "What's the latest news about AI?",
+               session_id: "default" }
+     })
+
+3. 🐍 Backend (main.py → POST /chat):
+   • Receives the request
+   • Calls generate_reply("What's the latest news about AI?", "default")
+
+4. 🧠 Agent (agent.py → generate_reply):
+   a) Reset flags: web_search_called = false, email_last_action = null
+
+   b) CONTEXT RETRIEVAL:
+      • get_session_documents("default") → ""
+      • get_recent_context("default") → "User: Hello\nAgent: Hi!"
+      • get_long_term_memory(query) → ""
+      • get_relevant_context(query, "default") → ""
+
+   c) INTENT DETECTION:
+      • needs_email? → NO
+      • needs_pdf? → NO
+      • should_search? → YES! ("latest" matches SEARCH_KEYWORDS)
+
+   d) WEB SEARCH:
+      • search_web("What's the latest news about AI?")
+      • → Serper returns 5 Google results
+      • web_search_called = true
+      • Results injected into system prompt
+
+   e) MODEL SELECTION:
+      • pick_model() → llama_model (no code keywords)
+
+   f) CALL AI via Agno:
+      • System prompt = grounding rules + context + search results
+      • User prompt = "What's the latest news about AI?"
+      • → Groq returns: "Here's the latest AI news: ..."
+
+   g) SAVE TO MEMORY:
+      • Embed combined text → 768-dim vector
+      • INSERT INTO conversations (session_id, content, embedding, ...)
+
+   h) CHECK TURNS:
+      • count_raw_turns("default") → 3 (under 10, no summary needed)
+
+5. 🐍 Backend returns to frontend:
+   { reply: "Here's the latest...", used_search: true, model: "Groq" }
+
+6. ⚛️ Frontend (App.jsx):
+   • Sets loading = false → hides typing indicator
+   • Creates agent message bubble (left side)
+   • Shows "Powered by web search" badge
+   • Refreshes session list sidebar
+
+7. 👤 You see the response! ✅
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════ SECTION 16 -->
+<section id="s16">
+  <span class="section-number">Section 16</span>
+  <h2>📋 File-by-File Breakdown</h2>
+
+  <h3>Root Level</h3>
+  <table>
+    <thead><tr><th>File</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td><code>README.md</code></td><td>Project documentation</td></tr>
+      <tr><td><code>ingest.py</code></td><td>Test script — inserts sample documents into the database</td></tr>
+      <tr><td><code>.gitignore</code></td><td>Tells Git which files to ignore (venv, keys, cache)</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Backend Files</h3>
+  <table>
+    <thead><tr><th>File</th><th>Purpose</th><th>Lines</th></tr></thead>
+    <tbody>
+      <tr><td><code>main.py</code></td><td>API gateway — all HTTP endpoints</td><td>196</td></tr>
+      <tr><td><code>agent.py</code></td><td>The AI brain — intent detection, routing, response generation</td><td>1,180</td></tr>
+      <tr><td><code>memory.py</code></td><td>Memory layer — save/search conversations &amp; documents</td><td>853</td></tr>
+      <tr><td><code>embedding.py</code></td><td>Text → vector embedding using sentence-transformers</td><td>61</td></tr>
+      <tr><td><code>email_routes.py</code></td><td>REST endpoints for the Gmail panel</td><td>213</td></tr>
+      <tr><td><code>gmail_auth.py</code></td><td>Gmail OAuth2 authentication flow</td><td>149</td></tr>
+      <tr><td><code>tts.py</code></td><td>Text-to-speech via Piper</td><td>29</td></tr>
+      <tr><td><code>whisper_service.py</code></td><td>Speech-to-text microservice (separate server)</td><td>59</td></tr>
+      <tr><td><code>tools/web_search.py</code></td><td>Serper Google search</td><td>45</td></tr>
+      <tr><td><code>tools/email_tool.py</code></td><td>Gmail API operations (send, read, reply, draft, etc.)</td><td>269</td></tr>
+      <tr><td><code>tools/pdf_tool.py</code></td><td>PDF read/create/edit/render</td><td>761</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Frontend Files</h3>
+  <table>
+    <thead><tr><th>File</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td><code>App.jsx</code></td><td>Main app — state management, API calls, coordination</td></tr>
+      <tr><td><code>Sidebar.jsx</code></td><td>Left panel with session list and quick actions</td></tr>
+      <tr><td><code>Topbar.jsx</code></td><td>Top navigation bar</td></tr>
+      <tr><td><code>Messages.jsx</code></td><td>Chat message rendering (markdown, code, PDF cards, math)</td></tr>
+      <tr><td><code>InputBar.jsx</code></td><td>Text, PDF attachment, and voice input</td></tr>
+      <tr><td><code>EmailPanel.jsx</code></td><td>Gmail integration UI (inbox, search, compose, reply)</td></tr>
+      <tr><td><code>CommandPalette.jsx</code></td><td>Ctrl+K spotlight command search</td></tr>
+      <tr><td><code>VoiceModal.jsx</code></td><td>Immersive voice recording modal</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ═══════════════════════════════════════════════════ SECTION 17 -->
+<section id="s17">
+  <span class="section-number">Section 17</span>
+  <h2>🌐 External Services &amp; Dependencies</h2>
+
+  <table>
+    <thead><tr><th>Service</th><th>Free/Paid</th><th>What It Does</th><th>API Key?</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Groq</strong></td><td>Free tier</td><td>Runs AI language models in the cloud</td><td>Yes (<code>GROQ_API_KEY</code>)</td></tr>
+      <tr><td><strong>Serper</strong></td><td>Free tier (2,500 searches)</td><td>Google search results API</td><td>Yes (<code>SERPER_API_KEY</code>)</td></tr>
+      <tr><td><strong>Gmail API</strong></td><td>Free (Google account)</td><td>Read/send/draft emails</td><td>Yes (<code>credentials.json</code>)</td></tr>
+      <tr><td><strong>PostgreSQL</strong></td><td>Free (local)</td><td>Database for memory storage</td><td>No</td></tr>
+      <tr><td><strong>Piper TTS</strong></td><td>Free (local)</td><td>Text-to-speech</td><td>No</td></tr>
+      <tr><td><strong>Faster-Whisper</strong></td><td>Free (local)</td><td>Speech-to-text</td><td>No</td></tr>
+      <tr><td><strong>Sentence-Transformers</strong></td><td>Free (local)</td><td>Text embedding model</td><td>No</td></tr>
+    </tbody>
+  </table>
+
+  <hr>
+
+  <div class="callout tip">
+    <div class="callout-title">🚀 To Run This Project</div>
+    <p>You need <strong>4 services</strong> running simultaneously:</p>
+    <ol>
+      <li><strong>PostgreSQL</strong> (with pgvector extension) on port 5432</li>
+      <li><strong>Backend API</strong>: <code>uvicorn main:app --reload --port 8000</code></li>
+      <li><strong>Whisper service</strong>: <code>uvicorn whisper_service:app --reload --port 8001</code></li>
+      <li><strong>Frontend</strong>: <code>npm run dev</code> (from the frontend/ directory)</li>
+    </ol>
+  </div>
+
+  <div class="callout info">
+    <div class="callout-title">📝 Naming Note</div>
+    The assistant calls itself <strong>"Nexus"</strong> in the system prompt, and the frontend UI is branded as <strong>"Nexus Studio"</strong>. The project repository is named <strong>"Virtual Assist"</strong> / <strong>"VPA"</strong> (Virtual Personal Assistant).
+  </div>
+</section>
+
+</div>
+
+<div class="footer">
+  <p>Virtual Assist — Complete Project Explanation</p>
+  <p>Generated on <script>document.write(new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' }))</script></p>
+  <p style="margin-top: 8px; font-size: 11px;">💡 Tip: Press <strong>Ctrl+P</strong> to save this as a PDF</p>
+</div>
+
+</body>
+</html>

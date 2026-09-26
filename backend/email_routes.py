@@ -4,7 +4,7 @@ Endpoints used by the frontend EmailPanel.
 """
 
 import asyncio
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request, UploadFile, File, Form
 from pydantic import BaseModel
 from gmail_auth import is_authenticated, start_oauth_flow
 from tools.email_tool import (
@@ -20,10 +20,29 @@ router = APIRouter(prefix="/email", tags=["email"])
 
 @router.get("/status")
 def email_status():
-    """Check if Gmail is authenticated."""
+    """Check if Gmail is authenticated and return account details."""
     authenticated = is_authenticated()
-    unread = get_unread_count() if authenticated else 0
-    return {"authenticated": authenticated, "unread_count": unread}
+    if not authenticated:
+        return {"authenticated": False, "unread_count": 0, "email": None, "total_messages": 0}
+
+    unread = get_unread_count()
+    email_address = None
+    total_messages = 0
+    try:
+        from gmail_auth import get_gmail_service
+        service = get_gmail_service()
+        profile = service.users().getProfile(userId="me").execute()
+        email_address = profile.get("emailAddress")
+        total_messages = profile.get("messagesTotal", 0)
+    except Exception as e:
+        print(f"[email/status profile fetch error] {e}")
+
+    return {
+        "authenticated": True,
+        "email": email_address,
+        "unread_count": unread,
+        "total_messages": total_messages,
+    }
 
 
 @router.get("/auth")
@@ -111,11 +130,59 @@ class DraftRequest(BaseModel):
 
 
 @router.post("/send")
-async def send(req: SendRequest):
-    """Send an email."""
+async def send(
+    request: Request,
+    to: str = Form(None),
+    subject: str = Form(None),
+    body: str = Form(None),
+    files: list[UploadFile] = File(None),
+):
+    """Send an email with optional file attachments. Supports both multipart/form-data and JSON."""
     if not is_authenticated():
         raise HTTPException(status_code=401, detail="Gmail not authenticated.")
-    result = await asyncio.to_thread(send_email, req.to, req.subject, req.body)
+
+    content_type = request.headers.get("content-type", "")
+    to_val = to
+    subject_val = subject
+    body_val = body
+    attachment_list = []
+
+    if "application/json" in content_type:
+        try:
+            data = await request.json()
+            to_val = data.get("to")
+            subject_val = data.get("subject")
+            body_val = data.get("body")
+        except Exception:
+            pass
+    elif files:
+        total_size = 0
+        MAX_TOTAL_SIZE = 25 * 1024 * 1024  # 25MB Gmail limit
+        for f in files:
+            if f and f.filename:
+                file_bytes = await f.read()
+                total_size += len(file_bytes)
+                if total_size > MAX_TOTAL_SIZE:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Total attachment size exceeds the 25MB Gmail limit.",
+                    )
+                attachment_list.append({
+                    "filename": f.filename,
+                    "content": file_bytes,
+                    "content_type": f.content_type,
+                })
+
+    if not to_val or not subject_val or body_val is None:
+        raise HTTPException(status_code=422, detail="Missing required fields: to, subject, body.")
+
+    result = await asyncio.to_thread(
+        send_email,
+        to_val,
+        subject_val,
+        body_val,
+        attachments=attachment_list if attachment_list else None,
+    )
     if not result.get("success"):
         raise HTTPException(status_code=500, detail=result.get("error", "Send failed"))
     return result

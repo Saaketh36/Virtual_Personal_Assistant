@@ -185,7 +185,7 @@ async def get_relevant_context(
     query: str,
     session_id: str,
     *,
-    min_similarity: float = 0.58,
+    min_similarity: float = 0.65,
     include_summaries: bool = True,
 ) -> str:
     """Vector similarity search scoped to conversation memory in this session.
@@ -371,6 +371,25 @@ async def summarize_old_turns(session_id: str, summarize_fn):
             await conn.close()
 
 
+def _chunk_text(text: str, chunk_size: int = 1000, overlap: int = 150) -> list[str]:
+    """Splits text into overlapping chunks for granular embedding and vector retrieval."""
+    if not text:
+        return []
+    cleaned = text.strip()
+    if len(cleaned) <= chunk_size:
+        return [cleaned]
+    
+    chunks = []
+    start = 0
+    while start < len(cleaned):
+        end = start + chunk_size
+        chunk = cleaned[start:end].strip()
+        if chunk:
+            chunks.append(chunk)
+        start += chunk_size - overlap
+    return chunks
+
+
 # ── Session-scoped document memory ────────────────────────────────────────────
 
 async def save_document_memory(
@@ -380,37 +399,111 @@ async def save_document_memory(
     summary: str | None = None,
     file_path: str | None = None,
 ):
-    """Store extracted document content into the DB, strictly scoped to this session.
-    The document is tagged with memory_type='document' and records the local file_path."""
-    if not _memory_available():
+    """Store extracted document content into the DB with chunking and deduplication.
+    Each chunk is embedded and stored with memory_type='document'."""
+    if not _memory_available() or not document_text:
         return
 
     label = filename or "uploaded document"
-    content = _trim(f"[Document: {label}]\n{document_text}", MEMORY_MAX_CHARS)
     conn = None
     try:
-        vec = await embed(content[:4000])
-        vec_str = _make_vec_str(vec)
         conn = await _connect()
         if not conn:
             return
 
-        summary_text = _trim(summary, CONTEXT_ITEM_MAX_CHARS) if summary else None
+        # Deduplication: remove previous chunks with same file_path / source in this session
+        # to avoid storing duplicate chunks every time the same PDF is uploaded.
         await conn.execute(
             """
-            INSERT INTO conversations
-                (session_id, role, content, summary, embedding, source, memory_type, file_path)
-            VALUES ($1, 'document', $2, $3, $4::vector, $5, 'document', $6)
+            DELETE FROM conversations
+            WHERE session_id = $1
+              AND memory_type = 'document'
+              AND (
+                  (file_path IS NOT NULL AND file_path = $2)
+                  OR source = $3
+              )
             """,
             session_id,
-            content,
-            summary_text,
-            vec_str,
-            filename or "pdf_upload",
             file_path,
+            filename or "pdf_upload",
         )
+
+        chunks = _chunk_text(document_text, chunk_size=1000, overlap=150)
+        summary_text = _trim(summary, CONTEXT_ITEM_MAX_CHARS) if summary else None
+
+        for idx, chunk in enumerate(chunks):
+            content = f"[Document: {label} (chunk {idx+1}/{len(chunks)})]\n{chunk}"
+            vec = await embed(chunk)
+            vec_str = _make_vec_str(vec)
+            await conn.execute(
+                """
+                INSERT INTO conversations
+                    (session_id, role, content, summary, embedding, source, memory_type, file_path)
+                VALUES ($1, 'document_chunk', $2, $3, $4::vector, $5, 'document', $6)
+                """,
+                session_id,
+                content,
+                summary_text if idx == 0 else None,
+                vec_str,
+                filename or "pdf_upload",
+                file_path,
+            )
     except Exception as exc:
         _warn("save document memory", exc)
+    finally:
+        if conn:
+            await conn.close()
+
+
+async def get_relevant_document_context(
+    query: str,
+    session_id: str | None = None,
+    min_similarity: float = 0.45,
+    limit: int = 5,
+) -> str:
+    """Vector similarity search across document memory chunks.
+    Allows the assistant to retrieve document context across sessions when queried."""
+    if not _memory_available() or not query:
+        return ""
+
+    conn = None
+    try:
+        vec = await embed(_trim(query, MEMORY_MAX_CHARS))
+        vec_str = _make_vec_str(vec)
+        conn = await _connect()
+        if not conn:
+            return ""
+
+        rows = await conn.fetch(
+            """
+            SELECT content, summary, source, file_path,
+                   1 - (embedding <=> $1::vector) AS sim
+            FROM conversations
+            WHERE memory_type = 'document'
+              AND 1 - (embedding <=> $1::vector) >= $2
+            ORDER BY (
+                CASE WHEN session_id = $3 THEN 0.08 ELSE 0 END + (1 - (embedding <=> $1::vector))
+            ) DESC
+            LIMIT $4
+            """,
+            vec_str,
+            min_similarity,
+            session_id or "",
+            limit,
+        )
+
+        if not rows:
+            return ""
+
+        parts = []
+        for row in rows:
+            parts.append(_trim(row["content"], CONTEXT_ITEM_MAX_CHARS))
+            if row.get("summary"):
+                parts.append(f"[Document summary] {_trim(row['summary'], CONTEXT_ITEM_MAX_CHARS)}")
+        return "\n---\n".join(parts)
+    except Exception as exc:
+        _warn("relevant document context lookup", exc)
+        return ""
     finally:
         if conn:
             await conn.close()
@@ -419,7 +512,7 @@ async def save_document_memory(
 async def get_session_documents(session_id: str, filename: str | None = None) -> str:
     """Return document content uploaded in THIS session only.
     If filename is specified, filters strictly for that document.
-    Otherwise, returns the single most recently uploaded document."""
+    Otherwise, returns the most recently uploaded document chunks."""
     if not _memory_available():
         return ""
 
@@ -437,8 +530,8 @@ async def get_session_documents(session_id: str, filename: str | None = None) ->
                 WHERE session_id = $1 
                   AND memory_type = 'document'
                   AND source = $2
-                ORDER BY created_at DESC
-                LIMIT 1
+                ORDER BY created_at ASC
+                LIMIT 10
                 """,
                 session_id,
                 filename,
@@ -450,7 +543,7 @@ async def get_session_documents(session_id: str, filename: str | None = None) ->
                 FROM conversations
                 WHERE session_id = $1 AND memory_type = 'document'
                 ORDER BY created_at DESC
-                LIMIT 1
+                LIMIT 10
                 """,
                 session_id,
             )
@@ -458,8 +551,7 @@ async def get_session_documents(session_id: str, filename: str | None = None) ->
         for row in rows:
             if row["summary"]:
                 parts.append(f"[Document summary] {_trim(row['summary'], CONTEXT_ITEM_MAX_CHARS)}")
-            else:
-                parts.append(_trim(row["content"], CONTEXT_ITEM_MAX_CHARS))
+            parts.append(_trim(row["content"], CONTEXT_ITEM_MAX_CHARS))
         return "\n---\n".join(parts)
     except Exception as exc:
         _warn("get session documents", exc)
@@ -669,7 +761,7 @@ async def get_session_messages(session_id: str) -> list[dict]:
             return []
         rows = await conn.fetch(
             """
-            SELECT content, role, source, summary, created_at, memory_type
+            SELECT id, content, role, source, summary, created_at, memory_type
             FROM conversations
             WHERE session_id = $1
             ORDER BY created_at ASC
@@ -679,32 +771,54 @@ async def get_session_messages(session_id: str) -> list[dict]:
         messages = []
         for row in rows:
             content = row["content"] or ""
-            created = row["created_at"].isoformat() if row["created_at"] else None
+            dt = row["created_at"]
+            time_display = dt.strftime("%I:%M %p") if dt else ""
             source = row["source"] or "chat"
+            row_id = str(row["id"])
+
+            if row["memory_type"] == "document":
+                # Internal document vector chunks are not chat bubbles
+                continue
 
             if row["role"] == "summary":
                 messages.append({
-                    "role": "system",
+                    "id": f"s_{row_id}",
+                    "role": "agent",
                     "content": f"[Summary of earlier conversation]\n{row['summary'] or content}",
-                    "time": created,
-                    "source": source,
-                })
-            elif row["memory_type"] == "document":
-                messages.append({
-                    "role": "system",
-                    "content": "[Uploaded document stored in memory]",
-                    "time": created,
+                    "time": time_display,
+                    "model": "Groq",
                     "source": source,
                 })
             elif content.startswith("User: ") and "\nAgent: " in content:
                 parts = content.split("\nAgent: ", 1)
                 user_part = parts[0].removeprefix("User: ").strip()
                 agent_part = parts[1].strip() if len(parts) > 1 else ""
-                messages.append({"role": "user", "content": user_part, "time": created, "source": source})
+                messages.append({
+                    "id": f"u_{row_id}",
+                    "role": "user",
+                    "content": user_part,
+                    "time": time_display,
+                    "model": "Groq",
+                    "source": source,
+                })
                 if agent_part:
-                    messages.append({"role": "agent", "content": agent_part, "time": created, "source": source})
+                    messages.append({
+                        "id": f"a_{row_id}",
+                        "role": "agent",
+                        "content": agent_part,
+                        "time": time_display,
+                        "model": "Groq",
+                        "source": source,
+                    })
             else:
-                messages.append({"role": "user", "content": content, "time": created, "source": source})
+                messages.append({
+                    "id": row_id,
+                    "role": "user" if row["role"] == "user" else "agent",
+                    "content": content,
+                    "time": time_display,
+                    "model": "Groq",
+                    "source": source,
+                })
 
         return messages
     except Exception as exc:

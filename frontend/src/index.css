@@ -18,6 +18,41 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Universal Icon & Button Alignment Classes */
+button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  vertical-align: middle;
+  line-height: 1;
+}
+
+svg {
+  display: inline-block;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+
+.btn-flex-center {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.icon-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+  flex-shrink: 0;
+}
+
+.icon-center svg {
+  display: block;
+  margin: auto;
+}
+
 /* Aura Glass Glowing Ambient Background Mesh */
 .bg-mesh-container {
   position: fixed;
@@ -186,7 +221,20 @@ textarea {
   animation: spin 1s linear infinite;
 }
 
+/* Live Audio Soundwave Bars Animation */
+@keyframes soundWave {
+  0%, 100% { height: 4px; }
+  50% { height: 16px; }
+}
 
-
-
+.wave-bar {
+  width: 3px;
+  background: #a855f7;
+  border-radius: 2px;
+  animation: soundWave 0.8s ease-in-out infinite;
+}
+.wave-bar:nth-child(2) { animation-delay: 0.15s; background: #ec4899; }
+.wave-bar:nth-child(3) { animation-delay: 0.3s; background: #8b5cf6; }
+.wave-bar:nth-child(4) { animation-delay: 0.45s; background: #06b6d4; }
+.wave-bar:nth-child(5) { animation-delay: 0.2s; background: #3b82f6; }
 
